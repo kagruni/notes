@@ -99,8 +99,16 @@ export function useProjects() {
 
   const updateProject = async (projectId: string, updates: Partial<Pick<Project, 'title' | 'description' | 'color'>>) => {
     try {
+      // Filter out undefined values to prevent Firebase errors
+      const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as any);
+
       await updateDoc(doc(db, 'projects', projectId), {
-        ...updates,
+        ...filteredUpdates,
         updatedAt: serverTimestamp(),
       });
     } catch (err) {

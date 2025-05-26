@@ -23,11 +23,11 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleCreateNote = async (title: string, content: string, tags?: string[]) => {
+  const handleCreateNote = async (title: string, content: string, tags: string[]) => {
     await createNote(title, content, project.id, tags);
   };
 
-  const handleUpdateNote = async (title: string, content: string, tags?: string[]) => {
+  const handleUpdateNote = async (title: string, content: string, tags: string[]) => {
     if (editingNote) {
       await updateNote(editingNote.id, { title, content, tags });
     }

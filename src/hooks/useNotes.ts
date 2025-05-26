@@ -59,7 +59,7 @@ export function useNotes(projectId?: string) {
     return () => unsubscribe();
   }, [user, projectId]);
 
-  const createNote = async (title: string, content: string, projectId: string, tags?: string[]) => {
+  const createNote = async (title: string, content: string, projectId: string, tags: string[]) => {
     if (!user) throw new Error('User not authenticated');
 
     try {
@@ -68,7 +68,7 @@ export function useNotes(projectId?: string) {
         content,
         projectId,
         userId: user.uid,
-        tags: tags || [],
+        tags: tags,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -80,8 +80,16 @@ export function useNotes(projectId?: string) {
 
   const updateNote = async (noteId: string, updates: Partial<Pick<Note, 'title' | 'content' | 'tags'>>) => {
     try {
+      // Filter out undefined values to prevent Firebase errors
+      const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as any);
+
       await updateDoc(doc(db, 'notes', noteId), {
-        ...updates,
+        ...filteredUpdates,
         updatedAt: serverTimestamp(),
       });
     } catch (err) {

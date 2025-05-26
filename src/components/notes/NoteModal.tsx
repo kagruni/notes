@@ -8,7 +8,7 @@ import SpeechRecorder from './SpeechRecorder';
 interface NoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (title: string, content: string, tags?: string[]) => Promise<void>;
+  onSubmit: (title: string, content: string, tags: string[]) => Promise<void>;
   note?: Note | null;
 }
 
@@ -38,9 +38,18 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
 
   const handleAddTag = () => {
     const tag = currentTag.trim();
+    console.log('handleAddTag called');
+    console.log('currentTag:', currentTag);
+    console.log('trimmed tag:', tag);
+    console.log('current tags:', tags);
+    console.log('tag already exists:', tags.includes(tag));
+    
     if (tag && !tags.includes(tag)) {
+      console.log('Adding tag:', tag);
       setTags([...tags, tag]);
       setCurrentTag('');
+    } else {
+      console.log('Tag not added - either empty or already exists');
     }
   };
 
@@ -49,7 +58,9 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
   };
 
   const handleTagKeyPress = (e: React.KeyboardEvent) => {
+    console.log('Key pressed:', e.key);
     if (e.key === 'Enter') {
+      console.log('Enter key detected, preventing default and calling handleAddTag');
       e.preventDefault();
       handleAddTag();
     }
@@ -84,7 +95,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
     setError('');
 
     try {
-      await onSubmit(title.trim(), content.trim(), tags.length > 0 ? tags : undefined);
+      await onSubmit(title.trim(), content.trim(), tags);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save note');
