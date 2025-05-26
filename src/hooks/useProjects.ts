@@ -59,20 +59,41 @@ export function useProjects() {
   }, [user]);
 
   const createProject = async (title: string, description?: string, color?: string) => {
-    if (!user) throw new Error('User not authenticated');
+    if (!user) {
+      console.error('User not authenticated');
+      throw new Error('User not authenticated');
+    }
+
+    // Debug authentication
+    console.log('User authenticated:', !!user);
+    console.log('User UID:', user.uid);
+    console.log('User email:', user.email);
+
+    console.log('Creating project with userId:', user.uid);
+    console.log('Project data:', { title, description, color });
 
     try {
-      await addDoc(collection(db, 'projects'), {
+      const projectData = {
         title,
         description: description || '',
         userId: user.uid,
         color: color || '#3B82F6',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      console.log('Attempting to create project:', projectData);
+      console.log('Database reference:', db);
+      console.log('Collection reference:', collection(db, 'projects'));
+      
+      const docRef = await addDoc(collection(db, 'projects'), projectData);
+      console.log('Project created successfully with ID:', docRef.id);
     } catch (err) {
-      console.error('Error creating project:', err);
-      throw new Error('Failed to create project');
+      console.error('Detailed error creating project:', err);
+      console.error('Error code:', (err as any)?.code);
+      console.error('Error message:', (err as any)?.message);
+      console.error('Full error object:', err);
+      throw new Error(`Failed to create project: ${(err as any)?.message || 'Unknown error'}`);
     }
   };
 
