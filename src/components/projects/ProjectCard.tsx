@@ -24,7 +24,7 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
 
   return (
     <div 
-      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow cursor-pointer"
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all cursor-pointer"
       onClick={() => onSelect(project)}
     >
       <div className="flex items-start justify-between">
@@ -44,11 +44,11 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
               {project.title}
             </h3>
             {project.description && (
-              <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 line-clamp-2">
+              <p className="text-gray-600 dark:text-gray-300 text-sm mt-1 line-clamp-2">
                 {project.description}
               </p>
             )}
-            <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
               Updated {formatDate(project.updatedAt)}
             </p>
           </div>
@@ -60,7 +60,7 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
               e.stopPropagation();
               setShowMenu(!showMenu);
             }}
-            className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>
@@ -74,7 +74,7 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
                     onEdit(project);
                     setShowMenu(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
                 >
                   <Edit2 className="w-4 h-4" />
                   <span>Edit</span>
@@ -85,7 +85,7 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
                     onDelete(project.id);
                     setShowMenu(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Delete</span>

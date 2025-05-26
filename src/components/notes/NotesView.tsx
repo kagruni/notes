@@ -66,7 +66,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               {project.title}
             </h1>
             {project.description && (
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-gray-600 dark:text-gray-300 mt-1">
                 {project.description}
               </p>
             )}
@@ -75,7 +75,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         
         <button
           onClick={() => setShowNoteModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4" />
           <span>New Note</span>
@@ -85,13 +85,13 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
       {/* Search */}
       <div className="mb-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search notes..."
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
         </div>
       </div>
@@ -108,7 +108,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
           </div>
         ) : filteredNotes.length === 0 ? (
           <div className="text-center py-12">
-            <StickyNote className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+            <StickyNote className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
             <div className="text-gray-500 dark:text-gray-400 mb-4">
               {searchTerm 
                 ? 'No notes found matching your search.' 
@@ -118,7 +118,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
             {!searchTerm && (
               <button
                 onClick={() => setShowNoteModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 <span>Create Note</span>

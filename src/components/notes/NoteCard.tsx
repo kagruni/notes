@@ -28,7 +28,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all">
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate flex-1">
           {note.title}
@@ -37,7 +37,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
         <div className="relative ml-2">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>
@@ -50,7 +50,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
                     onEdit(note);
                     setShowMenu(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
                 >
                   <Edit2 className="w-4 h-4" />
                   <span>Edit</span>
@@ -60,7 +60,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
                     onDelete(note.id);
                     setShowMenu(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2"
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Delete</span>
@@ -72,7 +72,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
       </div>
 
       <div className="mb-4">
-        <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+        <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
           {truncateContent(note.content)}
         </p>
       </div>
@@ -98,7 +98,7 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
         </div>
       )}
 
-      <div className="text-xs text-gray-500 dark:text-gray-500">
+      <div className="text-xs text-gray-500 dark:text-gray-400">
         {formatDate(note.updatedAt)}
       </div>
 

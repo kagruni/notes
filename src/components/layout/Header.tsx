@@ -28,7 +28,7 @@ export default function Header() {
           {/* Logo */}
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              Notes App
+              Notes App ({theme})
             </h1>
           </div>
 

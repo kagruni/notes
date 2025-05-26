@@ -1,25 +1,24 @@
 @import "tailwindcss";
 
+/* CSS custom properties for body background only */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --body-bg: #f9fafb; /* gray-50 */
+  --body-text: #111827; /* gray-900 */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+.dark {
+  --body-bg: #111827; /* gray-900 */
+  --body-text: #f9fafb; /* gray-50 */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Apply custom properties to body only */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--body-bg);
+  color: var(--body-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+/* Ensure Tailwind dark mode classes work properly */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+} 

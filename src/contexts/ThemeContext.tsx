@@ -6,37 +6,48 @@ import { Theme } from '@/types';
 interface ThemeContextType {
   theme: Theme['mode'];
   toggleTheme: () => void;
+  isLoading: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme['mode']>('light');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user has a saved theme preference
+    // Sync with the script in the head - check what theme was actually applied
+    const htmlHasDarkClass = document.documentElement.classList.contains('dark');
     const savedTheme = localStorage.getItem('theme') as Theme['mode'] | null;
-    if (savedTheme) {
+    
+    if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
       setTheme(savedTheme);
+    } else if (htmlHasDarkClass) {
+      setTheme('dark');
     } else {
-      // Check system preference
-      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(systemPrefersDark ? 'dark' : 'light');
+      setTheme('light');
     }
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    // Apply theme to document
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    if (!isLoading) {
+      // Apply theme to document
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      localStorage.setItem('theme', theme);
+    }
+  }, [theme, isLoading]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, isLoading }}>
       {children}
     </ThemeContext.Provider>
   );
