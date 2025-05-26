@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Note } from '@/types';
 import { X, Plus, Hash } from 'lucide-react';
+import SpeechRecorder from './SpeechRecorder';
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
   const [currentTag, setCurrentTag] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [speechError, setSpeechError] = useState('');
 
   useEffect(() => {
     if (note) {
@@ -31,6 +33,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
     }
     setCurrentTag('');
     setError('');
+    setSpeechError('');
   }, [note, isOpen]);
 
   const handleAddTag = () => {
@@ -50,6 +53,19 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
       e.preventDefault();
       handleAddTag();
     }
+  };
+
+  const handleTranscriptionComplete = (transcribedText: string) => {
+    // Append transcribed text to existing content with a space if content exists
+    const newContent = content.trim() 
+      ? `${content} ${transcribedText}` 
+      : transcribedText;
+    setContent(newContent);
+    setSpeechError('');
+  };
+
+  const handleSpeechError = (errorMessage: string) => {
+    setSpeechError(errorMessage);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,6 +119,12 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
             </div>
           )}
 
+          {speechError && (
+            <div className="p-3 bg-red-100 dark:bg-red-900/20 border border-red-400 text-red-700 dark:text-red-400 rounded text-sm">
+              Speech Error: {speechError}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Title *
@@ -118,15 +140,22 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Content *
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Content *
+              </label>
+              <SpeechRecorder
+                onTranscriptionComplete={handleTranscriptionComplete}
+                onError={handleSpeechError}
+                disabled={loading}
+              />
+            </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={12}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
-              placeholder="Write your note content here..."
+              placeholder="Write your note content here... or use voice input above"
               required
             />
           </div>
@@ -142,7 +171,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note }: NoteModal
                   type="text"
                   value={currentTag}
                   onChange={(e) => setCurrentTag(e.target.value)}
-                  onKeyPress={handleTagKeyPress}
+                  onKeyDown={handleTagKeyPress}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   placeholder="Add a tag"
                 />
