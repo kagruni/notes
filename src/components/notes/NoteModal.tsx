@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Note, NoteImage } from '@/types';
 import { X, Plus, Hash, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
 import SpeechRecorder from './SpeechRecorder';
@@ -29,10 +29,11 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  // Ref for the content textarea to handle cursor position
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+
   // Check if we're on mobile
-  const isMobile = typeof window !== 'undefined' && 
-    (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-     'ontouchstart' in window);
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
     if (note) {
@@ -73,15 +74,106 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   };
 
   const handleTranscriptionComplete = (transcribedText: string) => {
-    const newContent = content.trim() 
-      ? `${content} ${transcribedText}` 
-      : transcribedText;
-    setContent(newContent);
+    const textarea = contentTextareaRef.current;
+    
+    if (textarea) {
+      // Get current cursor position
+      const currentStart = textarea.selectionStart;
+      const currentEnd = textarea.selectionEnd;
+      const currentContent = content;
+      
+      // Check if cursor is positioned somewhere specific (not just at the very end)
+      const isAtEnd = currentStart === currentContent.length;
+      const hasSelection = currentStart !== currentEnd;
+      
+      if (!isAtEnd || hasSelection) {
+        // Cursor is positioned somewhere specific - insert at that position
+        const beforeCursor = currentContent.substring(0, currentStart);
+        const afterCursor = currentContent.substring(currentEnd);
+        
+        // Add appropriate spacing
+        let insertText = transcribedText;
+        if (beforeCursor && !beforeCursor.endsWith(' ') && !beforeCursor.endsWith('\n')) {
+          insertText = ' ' + insertText;
+        }
+        if (afterCursor && !afterCursor.startsWith(' ') && !afterCursor.startsWith('\n')) {
+          insertText = insertText + ' ';
+        }
+        
+        const newContent = beforeCursor + insertText + afterCursor;
+        setContent(newContent);
+        
+        // Restore cursor position after the inserted text
+        setTimeout(() => {
+          if (textarea) {
+            const newCursorPosition = currentStart + insertText.length;
+            textarea.setSelectionRange(newCursorPosition, newCursorPosition);
+          }
+        }, 0);
+      } else {
+        // Cursor is at the end or no specific position - append normally
+        const newContent = currentContent.trim() 
+          ? `${currentContent} ${transcribedText}` 
+          : transcribedText;
+        setContent(newContent);
+      }
+    } else {
+      // Fallback - just append to end
+      const newContent = content.trim() 
+        ? `${content} ${transcribedText}` 
+        : transcribedText;
+      setContent(newContent);
+    }
+    
     setSpeechError('');
+  };
+
+  // Handle textarea focus to track cursor position
+  const handleTextareaFocus = () => {
+    // Immediately capture cursor position on focus
+    setTimeout(() => {
+      const textarea = contentTextareaRef.current;
+      if (textarea) {
+        // This is a placeholder for the removed state variables
+      }
+    }, 0);
+  };
+
+  // Handle textarea blur but preserve cursor position for potential voice input
+  const handleTextareaBlur = () => {
+    // On mobile, keep textareaWasFocused true for a short time to handle voice input
+    if (isMobile) {
+      setTimeout(() => {
+        // Only reset if user hasn't interacted with voice input
+        // This is a placeholder for the removed state variable
+      }, 1000); // Give 1 second for voice input to start
+    }
+  };
+
+  // Handle selection change to update cursor position while focused
+  const handleTextareaSelectionChange = () => {
+    // This is a placeholder for the removed state variable
+  };
+
+  // Handle mobile touch events
+  const handleTextareaTouchEnd = () => {
+    if (isMobile) {
+      setTimeout(() => {
+        // This is a placeholder for the removed state variable
+      }, 100); // Small delay to ensure selection is updated
+    }
   };
 
   const handleSpeechError = (errorMessage: string) => {
     setSpeechError(errorMessage);
+  };
+
+  // Handle when voice recording starts to extend focus tracking
+  const handleVoiceRecordingStart = () => {
+    if (isMobile) {
+      // Extend the focus tracking period when voice recording starts
+      // This is a placeholder for the removed state variable
+    }
   };
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -396,6 +488,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   />
                 </div>
                 <textarea
+                  ref={contentTextareaRef}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   rows={12}
