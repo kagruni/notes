@@ -39,53 +39,6 @@ export function useSpeechToText(): UseSpeechToTextReturn {
            typeof navigator.mediaDevices.getUserMedia === 'function';
   };
 
-  const processRecording = useCallback(async () => {
-    try {
-      if (audioChunksRef.current.length === 0) {
-        throw new Error('No audio data recorded');
-      }
-
-      // Create audio blob
-      const audioBlob = new Blob(audioChunksRef.current, { 
-        type: audioChunksRef.current[0].type 
-      });
-
-      // Check minimum file size (avoid very short recordings)
-      if (audioBlob.size < 1000) {
-        throw new Error('Recording too short');
-      }
-
-      // Create form data for API
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'recording.webm');
-
-      // Send to transcription API
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Transcription failed');
-      }
-
-      const result = await response.json();
-      
-      if (result.success && result.text) {
-        setTranscription(result.text);
-        setRecordingState('idle');
-      } else {
-        throw new Error('No transcription returned');
-      }
-
-    } catch (err) {
-      console.error('Error processing recording:', err);
-      setError(err instanceof Error ? err.message : 'Failed to process recording');
-      setRecordingState('error');
-    }
-  }, []);
-
   const startRecording = useCallback(async () => {
     try {
       setError(null);
@@ -175,14 +128,62 @@ export function useSpeechToText(): UseSpeechToTextReturn {
       
       setRecordingState('error');
     }
-  }, [processRecording]);
+  }, []);
 
   const stopRecording = useCallback(async () => {
     if (mediaRecorderRef.current && recordingState === 'recording') {
       setRecordingState('processing');
       mediaRecorderRef.current.stop();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingState]);
+
+  const processRecording = useCallback(async () => {
+    try {
+      if (audioChunksRef.current.length === 0) {
+        throw new Error('No audio data recorded');
+      }
+
+      // Create audio blob
+      const audioBlob = new Blob(audioChunksRef.current, { 
+        type: audioChunksRef.current[0].type 
+      });
+
+      // Check minimum file size (avoid very short recordings)
+      if (audioBlob.size < 1000) {
+        throw new Error('Recording too short');
+      }
+
+      // Create form data for API
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'recording.webm');
+
+      // Send to transcription API
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Transcription failed');
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.text) {
+        setTranscription(result.text);
+        setRecordingState('idle');
+      } else {
+        throw new Error('No transcription returned');
+      }
+
+    } catch (err) {
+      console.error('Error processing recording:', err);
+      setError(err instanceof Error ? err.message : 'Failed to process recording');
+      setRecordingState('error');
+    }
+  }, []);
 
   const clearTranscription = useCallback(() => {
     setTranscription(null);

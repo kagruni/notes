@@ -3,15 +3,19 @@
 import { useState, useRef, useCallback } from 'react';
 import { Camera, Upload, X, AlertCircle } from 'lucide-react';
 import { NoteImage } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { uploadImageToStorage, compressImageFile, getImageDisplayUrl } from '@/lib/imageStorage';
 
 interface ImageUploaderProps {
   images: NoteImage[];
   onImagesChange: (images: NoteImage[]) => void;
   onImageClick?: (imageIndex: number) => void;
   disabled?: boolean;
+  projectId?: string; // Required for Firebase Storage path
 }
 
-export default function ImageUploader({ images, onImagesChange, onImageClick, disabled = false }: ImageUploaderProps) {
+export default function ImageUploader({ images, onImagesChange, onImageClick, disabled = false, projectId }: ImageUploaderProps) {
+  const { user } = useAuth();
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -53,69 +57,61 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     return `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  const compressImageForMobile = useCallback((canvas: HTMLCanvasElement, quality: number = 0.8): string => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas context not available');
-    
-    // Increase max dimensions for better quality while still being mobile-friendly
-    const maxWidth = isMobile ? 1200 : 1600;
-    const maxHeight = isMobile ? 1200 : 1600;
-    
-    if (canvas.width > maxWidth || canvas.height > maxHeight) {
-      const ratio = Math.min(maxWidth / canvas.width, maxHeight / canvas.height);
-      const newWidth = canvas.width * ratio;
-      const newHeight = canvas.height * ratio;
-      
-      // Create a new canvas with compressed size
-      const compressedCanvas = document.createElement('canvas');
-      compressedCanvas.width = newWidth;
-      compressedCanvas.height = newHeight;
-      const compressedCtx = compressedCanvas.getContext('2d');
-      
-      if (compressedCtx) {
-        // Use better image smoothing for higher quality
-        compressedCtx.imageSmoothingEnabled = true;
-        compressedCtx.imageSmoothingQuality = 'high';
-        compressedCtx.drawImage(canvas, 0, 0, newWidth, newHeight);
-        return compressedCanvas.toDataURL('image/jpeg', quality);
-      }
+  const processImageFile = useCallback(async (file: File): Promise<NoteImage> => {
+    if (!user || !projectId) {
+      throw new Error('User authentication and project ID required');
     }
-    
-    return canvas.toDataURL('image/jpeg', quality);
-  }, [isMobile]);
 
-  const processImageFile = useCallback(async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (!ctx) {
-          reject(new Error('Canvas context not available'));
-          return;
-        }
-        
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
-        
-        try {
-          const base64Data = compressImageForMobile(canvas, isMobile ? 0.75 : 0.85);
-          resolve(base64Data);
-        } catch (error) {
-          reject(error);
-        }
-      };
+    try {
+      console.log('📁 Processing file:', file.name, 'type:', file.type, 'size:', file.size);
       
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = URL.createObjectURL(file);
-    });
-  }, [compressImageForMobile, isMobile]);
+      // Compress the image for optimal storage
+      const compressedFile = await compressImageFile(file, isMobile ? 1200 : 1600, isMobile ? 0.75 : 0.85);
+      console.log('📁 Image compressed from', file.size, 'to', compressedFile.size, 'bytes');
+      
+      const imageId = generateImageId();
+      
+      // Upload to Firebase Storage
+      const { url, storagePath } = await uploadImageToStorage(compressedFile, user.uid, projectId, imageId);
+      
+      const noteImage: NoteImage = {
+        id: imageId,
+        url,
+        storagePath,
+        type: compressedFile.type,
+        name: file.name,
+        size: compressedFile.size,
+        createdAt: new Date(),
+      };
+
+      console.log('📁 Created NoteImage with Firebase Storage:', {
+        id: noteImage.id,
+        name: noteImage.name,
+        type: noteImage.type,
+        size: noteImage.size,
+        url: noteImage.url
+      });
+
+      return noteImage;
+    } catch (error) {
+      console.error('📁 Error processing image file:', error);
+      throw error;
+    }
+  }, [user, projectId, isMobile]);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
+
+    if (!user) {
+      setError('Please sign in to upload images');
+      return;
+    }
+
+    if (!projectId) {
+      setError('Project ID required for image upload');
+      return;
+    }
 
     console.log('📁 File upload started, files:', files.length);
     setError(null);
@@ -125,7 +121,6 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        console.log('📁 Processing file:', file.name, 'type:', file.type, 'size:', file.size);
         
         // Validate file type
         if (!file.type.startsWith('image/')) {
@@ -133,32 +128,13 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
           continue;
         }
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          setError(`File ${file.name} is too large (max 5MB)`);
+        // Validate file size (max 10MB for raw upload)
+        if (file.size > 10 * 1024 * 1024) {
+          setError(`File ${file.name} is too large (max 10MB)`);
           continue;
         }
 
-        const base64Data = await processImageFile(file);
-        console.log('📁 Base64 conversion completed, length:', base64Data.length);
-        
-        const noteImage: NoteImage = {
-          id: generateImageId(),
-          data: base64Data,
-          type: file.type,
-          name: file.name,
-          size: file.size,
-          createdAt: new Date(),
-        };
-
-        console.log('📁 Created NoteImage:', {
-          id: noteImage.id,
-          name: noteImage.name,
-          type: noteImage.type,
-          size: noteImage.size,
-          dataLength: noteImage.data.length
-        });
-
+        const noteImage = await processImageFile(file);
         newImages.push(noteImage);
       }
 
@@ -166,7 +142,7 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
       onImagesChange([...images, ...newImages]);
     } catch (error) {
       console.error('📁 Error processing images:', error);
-      setError('Failed to process images. Please try again.');
+      setError(error instanceof Error ? error.message : 'Failed to process images. Please try again.');
     } finally {
       setProcessing(false);
       // Reset the file input
@@ -174,7 +150,7 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         fileInputRef.current.value = '';
       }
     }
-  }, [images, onImagesChange, processImageFile]);
+  }, [images, onImagesChange, processImageFile, user, projectId]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -240,48 +216,54 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     setIsCapturing(false);
   }, []);
 
-  const capturePhoto = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return;
+  const capturePhoto = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current || !user || !projectId) return;
 
     console.log('📸 Camera capture started');
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
+    setProcessing(true);
+    
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
 
-    if (context) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      console.log('📸 Canvas size set:', canvas.width, 'x', canvas.height);
+      if (context) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        console.log('📸 Canvas size set:', canvas.width, 'x', canvas.height);
 
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Use the same compression as file uploads
-      const base64Data = compressImageForMobile(canvas, isMobile ? 0.75 : 0.85);
-      console.log('📸 Base64 conversion completed, length:', base64Data.length);
+        // Convert canvas to blob
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error('Failed to create blob from canvas'));
+            },
+            'image/jpeg',
+            isMobile ? 0.75 : 0.85
+          );
+        });
 
-      const noteImage: NoteImage = {
-        id: generateImageId(),
-        data: base64Data,
-        type: 'image/jpeg',
-        name: `camera-${Date.now()}.jpg`,
-        size: Math.round(base64Data.length * 0.75), // Approximate file size from base64
-        createdAt: new Date(),
-      };
+        // Create file from blob
+        const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        
+        // Process the captured image
+        const noteImage = await processImageFile(file);
 
-      console.log('📸 Created camera NoteImage:', {
-        id: noteImage.id,
-        name: noteImage.name,
-        type: noteImage.type,
-        size: noteImage.size,
-        dataLength: noteImage.data.length
-      });
-
-      console.log('📸 Adding camera image to state');
-      onImagesChange([...images, noteImage]);
-      setIsCapturing(false);
-      stopCamera();
+        console.log('📸 Adding camera image to state');
+        onImagesChange([...images, noteImage]);
+        setIsCapturing(false);
+        stopCamera();
+      }
+    } catch (error) {
+      console.error('📸 Error capturing photo:', error);
+      setError(error instanceof Error ? error.message : 'Failed to capture photo');
+    } finally {
+      setProcessing(false);
     }
-  }, [images, onImagesChange, stopCamera, compressImageForMobile, isMobile]);
+  }, [images, onImagesChange, stopCamera, processImageFile, user, projectId, isMobile]);
 
   const removeImage = useCallback((imageId: string) => {
     onImagesChange(images.filter(img => img.id !== imageId));
@@ -294,11 +276,21 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     }
   });
 
+  // Show warning if project ID is missing
+  if (!projectId && !disabled) {
+    return (
+      <div className="p-3 bg-amber-100 dark:bg-amber-900/20 border border-amber-400 text-amber-700 dark:text-amber-400 rounded text-sm">
+        <AlertCircle className="w-4 h-4 inline mr-2" />
+        Project ID required for image upload
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Images {isMobile && '(Auto-compressed for mobile)'}
+          Images {isMobile && '(Optimized for mobile)'}
         </label>
         
         {!disabled && (
@@ -330,7 +322,7 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
               }}
             >
               <Upload className="w-4 h-4" />
-              <span>{processing ? 'Processing...' : 'Upload'}</span>
+              <span>{processing ? 'Uploading...' : 'Upload'}</span>
             </button>
           </div>
         )}
@@ -340,7 +332,7 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         <div className="flex items-center space-x-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
           <span className="text-sm text-blue-700 dark:text-blue-300">
-            {isMobile ? 'Compressing images for mobile...' : 'Processing images...'}
+            Uploading to cloud storage...
           </span>
         </div>
       )}
@@ -380,7 +372,8 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
             <button
               type="button"
               onClick={capturePhoto}
-              className="w-16 h-16 bg-white rounded-full border-4 border-gray-300 hover:border-gray-400 transition-colors"
+              disabled={processing}
+              className="w-16 h-16 bg-white rounded-full border-4 border-gray-300 hover:border-gray-400 transition-colors disabled:opacity-50"
               style={{ 
                 WebkitTapHighlightColor: 'transparent',
                 touchAction: 'manipulation'
@@ -412,7 +405,7 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
             {images.map((image, index) => (
               <div key={image.id} className="relative group">
                 <img
-                  src={image.data}
+                  src={getImageDisplayUrl(image)}
                   alt={image.name}
                   className="w-full h-24 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
                   onClick={() => {

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Note } from '@/types';
 import { MoreHorizontal, Edit2, Trash2, Tag, Image as ImageIcon } from 'lucide-react';
+import { getImageDisplayUrl } from '@/lib/imageStorage';
 
 interface NoteCardProps {
   note: Note;
@@ -99,7 +100,7 @@ export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardPro
             {note.images.slice(0, 3).map((image) => (
               <img
                 key={image.id}
-                src={image.data}
+                src={getImageDisplayUrl(image)}
                 alt={image.name}
                 className="w-full h-16 object-cover rounded border border-gray-200 dark:border-gray-600"
               />

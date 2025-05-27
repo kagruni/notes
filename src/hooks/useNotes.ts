@@ -14,6 +14,7 @@ import {
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Note, NoteImage } from '@/types';
+import { migrateImageToStorage, deleteImageFromStorage } from '@/lib/imageStorage';
 
 export function useNotes(projectId?: string) {
   const { user } = useAuth();
@@ -37,7 +38,7 @@ export function useNotes(projectId?: string) {
 
     const unsubscribe = onSnapshot(
       q,
-      (snapshot) => {
+      async (snapshot) => {
         const notesData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
@@ -45,7 +46,49 @@ export function useNotes(projectId?: string) {
           updatedAt: doc.data().updatedAt?.toDate() || new Date(),
         })) as Note[];
         
-        setNotes(notesData);
+        // Migrate base64 images to Firebase Storage in the background
+        const migrationPromises = notesData.map(async (note) => {
+          if (!note.images || note.images.length === 0) return note;
+          
+          const imagesToMigrate = note.images.filter(img => img.data && !img.url);
+          if (imagesToMigrate.length === 0) return note;
+          
+          console.log(`🔄 Migrating ${imagesToMigrate.length} images for note ${note.id}`);
+          
+          try {
+            const migratedImages = await Promise.all(
+              note.images.map(async (image) => {
+                if (image.data && !image.url && user && projectId) {
+                  // Migrate this image to Firebase Storage
+                  return await migrateImageToStorage(image, user.uid, projectId);
+                }
+                return image; // Already migrated or no data to migrate
+              })
+            );
+            
+            // Update the note in Firestore with migrated images
+            await updateDoc(doc(db, 'notes', note.id), {
+              images: migratedImages,
+              updatedAt: serverTimestamp(),
+            });
+            
+            console.log(`✅ Successfully migrated images for note ${note.id}`);
+            return { ...note, images: migratedImages };
+          } catch (error) {
+            console.error(`❌ Failed to migrate images for note ${note.id}:`, error);
+            return note; // Return original note if migration fails
+          }
+        });
+        
+        // Wait for all migrations to complete, then update state
+        try {
+          const migratedNotes = await Promise.all(migrationPromises);
+          setNotes(migratedNotes);
+        } catch (error) {
+          console.error('❌ Error during image migration:', error);
+          setNotes(notesData); // Fallback to original data
+        }
+        
         setLoading(false);
         setError(null);
       },
@@ -70,15 +113,20 @@ export function useNotes(projectId?: string) {
 
       // Mobile-specific validation
       if (isMobile && images && images.length > 0) {
-        const totalImageSize = images.reduce((total, img) => total + (img.data?.length || 0), 0);
-        const maxSizeForMobile = 2 * 1024 * 1024; // 2MB total for mobile
+        // For new Firebase Storage images, we don't need to worry about size limits
+        // Only validate if there are still base64 images
+        const base64Images = images.filter(img => img.data);
+        if (base64Images.length > 0) {
+          const totalImageSize = base64Images.reduce((total, img) => total + (img.data?.length || 0), 0);
+          const maxSizeForMobile = 2 * 1024 * 1024; // 2MB total for mobile
 
-        console.log('📱 Mobile device detected - validating image data for new note');
-        console.log('📱 Total image data size:', totalImageSize, 'bytes');
-        console.log('📱 Mobile limit:', maxSizeForMobile, 'bytes');
+          console.log('📱 Mobile device detected - validating base64 image data for new note');
+          console.log('📱 Total base64 image data size:', totalImageSize, 'bytes');
+          console.log('📱 Mobile limit:', maxSizeForMobile, 'bytes');
 
-        if (totalImageSize > maxSizeForMobile) {
-          throw new Error('Images too large for mobile upload. Please reduce image quality or remove some images.');
+          if (totalImageSize > maxSizeForMobile) {
+            throw new Error('Images too large for mobile upload. Please reduce image quality or remove some images.');
+          }
         }
       }
 
@@ -134,21 +182,26 @@ export function useNotes(projectId?: string) {
       // Mobile-specific validation and limits
       if (isMobile && filteredUpdates.images) {
         const images = filteredUpdates.images as NoteImage[];
-        const totalImageSize = images.reduce((total, img) => total + (img.data?.length || 0), 0);
-        const maxSizeForMobile = 2 * 1024 * 1024; // 2MB total for mobile
+        // For new Firebase Storage images, we don't need to worry about size limits
+        // Only validate if there are still base64 images
+        const base64Images = images.filter(img => img.data);
+        if (base64Images.length > 0) {
+          const totalImageSize = base64Images.reduce((total, img) => total + (img.data?.length || 0), 0);
+          const maxSizeForMobile = 2 * 1024 * 1024; // 2MB total for mobile
 
-        console.log('📱 Mobile device detected - validating image data');
-        console.log('📱 Total image data size:', totalImageSize, 'bytes');
-        console.log('📱 Mobile limit:', maxSizeForMobile, 'bytes');
+          console.log('📱 Mobile device detected - validating base64 image data');
+          console.log('📱 Total base64 image data size:', totalImageSize, 'bytes');
+          console.log('📱 Mobile limit:', maxSizeForMobile, 'bytes');
 
-        if (totalImageSize > maxSizeForMobile) {
-          throw new Error('Images too large for mobile upload. Please reduce image quality or remove some images.');
-        }
+          if (totalImageSize > maxSizeForMobile) {
+            throw new Error('Images too large for mobile upload. Please reduce image quality or remove some images.');
+          }
 
-        // Validate each image
-        for (const img of images) {
-          if (img.data && img.data.length > 1024 * 1024) { // 1MB per image on mobile
-            console.log('📱 Large image detected:', img.name, img.data.length, 'bytes');
+          // Validate each base64 image
+          for (const img of base64Images) {
+            if (img.data && img.data.length > 1024 * 1024) { // 1MB per image on mobile
+              console.log('📱 Large base64 image detected:', img.name, img.data.length, 'bytes');
+            }
           }
         }
       }
@@ -183,7 +236,31 @@ export function useNotes(projectId?: string) {
 
   const deleteNote = async (noteId: string) => {
     try {
+      // Get the note to find images that need to be deleted from storage
+      const noteToDelete = notes.find(note => note.id === noteId);
+      
+      // Delete the note document first
       await deleteDoc(doc(db, 'notes', noteId));
+      
+      // Clean up Firebase Storage images in the background
+      if (noteToDelete?.images) {
+        const storageCleanupPromises = noteToDelete.images
+          .filter(image => image.storagePath) // Only delete images that are in Firebase Storage
+          .map(async (image) => {
+            try {
+              await deleteImageFromStorage(image.storagePath!);
+              console.log(`🗑️ Deleted image from storage: ${image.storagePath}`);
+            } catch (error) {
+              console.warn(`⚠️ Failed to delete image from storage: ${image.storagePath}`, error);
+              // Don't throw here - note deletion should succeed even if storage cleanup fails
+            }
+          });
+        
+        // Run storage cleanup in background without blocking
+        Promise.all(storageCleanupPromises).catch(error => {
+          console.warn('⚠️ Some images could not be cleaned up from storage:', error);
+        });
+      }
     } catch (err) {
       console.error('Error deleting note:', err);
       throw new Error('Failed to delete note');

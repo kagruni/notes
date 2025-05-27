@@ -172,6 +172,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         note={editingNote || viewingNote}
         mode={modalMode}
         onEdit={modalMode === 'view' ? handleEditFromView : undefined}
+        projectId={project.id}
       />
     </div>
   );

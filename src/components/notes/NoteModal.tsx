@@ -5,6 +5,7 @@ import { Note, NoteImage } from '@/types';
 import { X, Plus, Hash, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
 import SpeechRecorder from './SpeechRecorder';
 import ImageUploader from './ImageUploader';
+import { getImageDisplayUrl } from '@/lib/imageStorage';
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -13,9 +14,10 @@ interface NoteModalProps {
   note?: Note | null;
   mode?: 'view' | 'edit' | 'create';
   onEdit?: () => void;
+  projectId: string;
 }
 
-export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'create', onEdit }: NoteModalProps) {
+export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'create', onEdit, projectId }: NoteModalProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -128,6 +130,45 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setSpeechError('');
   };
 
+  // Handle textarea focus to track cursor position
+  const handleTextareaFocus = useCallback(() => {
+    // Immediately capture cursor position on focus
+    setTimeout(() => {
+      const textarea = contentTextareaRef.current;
+      if (textarea) {
+        // Track focus for voice input compatibility on mobile
+        console.log('Textarea focused');
+      }
+    }, 0);
+  }, []);
+
+  // Handle textarea blur but preserve cursor position for potential voice input
+  const handleTextareaBlur = useCallback(() => {
+    // On mobile, keep textareaWasFocused true for a short time to handle voice input
+    if (isMobile) {
+      setTimeout(() => {
+        // Only reset if user hasn't interacted with voice input
+        console.log('Textarea blur handled on mobile');
+      }, 1000); // Give 1 second for voice input to start
+    }
+  }, [isMobile]);
+
+  // Handle selection change to update cursor position while focused
+  const handleTextareaSelectionChange = useCallback(() => {
+    // Track selection changes for voice input positioning
+    console.log('Textarea selection changed');
+  }, []);
+
+  // Handle mobile touch events
+  const handleTextareaTouchEnd = useCallback(() => {
+    if (isMobile) {
+      setTimeout(() => {
+        // Handle touch end events on mobile
+        console.log('Touch end handled on mobile');
+      }, 100); // Small delay to ensure selection is updated
+    }
+  }, [isMobile]);
+
   const handleSpeechError = (errorMessage: string) => {
     setSpeechError(errorMessage);
   };
@@ -147,7 +188,9 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
       name: img.name,
       type: img.type,
       size: img.size,
-      dataLength: img.data.length
+      url: img.url,
+      storagePath: img.storagePath,
+      dataLength: img.data?.length || 0
     })));
     
     if (mode === 'view') return;
@@ -230,17 +273,17 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setGalleryOpen(false);
   };
 
-  const goToPreviousImage = useCallback(() => {
+  const goToPreviousImage = () => {
     if (currentImageIndex > 0) {
       setCurrentImageIndex(currentImageIndex - 1);
     }
-  }, [currentImageIndex]);
+  };
 
-  const goToNextImage = useCallback(() => {
+  const goToNextImage = () => {
     if (currentImageIndex < images.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
     }
-  }, [currentImageIndex, images.length]);
+  };
 
   // Handle keyboard navigation in gallery
   useEffect(() => {
@@ -262,10 +305,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [galleryOpen, goToPreviousImage, goToNextImage]);
+  }, [galleryOpen, goToNextImage, goToPreviousImage]);
 
-  // Safe date formatting function
-  const formatImageDate = (createdAt: unknown): string => {
+  // Safe date formatting function with proper typing
+  const formatImageDate = (createdAt: Date | { toDate(): Date } | string | number | null | undefined): string => {
     try {
       if (!createdAt) return 'Unknown';
       
@@ -275,17 +318,16 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
       }
       
       // If it's a Firestore Timestamp
-      if (typeof createdAt === 'object' && createdAt !== null && 'toDate' in createdAt) {
-        const timestamp = createdAt as { toDate: () => Date };
-        if (typeof timestamp.toDate === 'function') {
-          return timestamp.toDate().toLocaleDateString();
-        }
+      if (typeof createdAt === 'object' && createdAt !== null && 'toDate' in createdAt && typeof createdAt.toDate === 'function') {
+        return createdAt.toDate().toLocaleDateString();
       }
       
       // If it's a string or number, try to parse it
-      const date = new Date(createdAt as string | number);
-      if (!isNaN(date.getTime())) {
-        return date.toLocaleDateString();
+      if (typeof createdAt === 'string' || typeof createdAt === 'number') {
+        const date = new Date(createdAt);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString();
+        }
       }
       
       return 'Unknown';
@@ -388,7 +430,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                     {images.map((image) => (
                       <div key={image.id} className="relative group">
                         <img
-                          src={image.data}
+                          src={getImageDisplayUrl(image)}
                           alt={image.name}
                           className="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={() => {
@@ -450,6 +492,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   ref={contentTextareaRef}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
+                  onFocus={handleTextareaFocus}
+                  onBlur={handleTextareaBlur}
+                  onSelect={handleTextareaSelectionChange}
+                  onTouchEnd={handleTextareaTouchEnd}
                   rows={12}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
                   style={{ fontSize: isMobile ? '16px' : '14px' }}
@@ -514,6 +560,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   onImagesChange={setImages}
                   onImageClick={openGallery}
                   disabled={loading}
+                  projectId={projectId}
                 />
               </div>
 
@@ -582,7 +629,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   {/* Main Image */}
                   <div className="relative bg-black flex items-center justify-center min-h-[400px] max-h-[60vh]">
                     <img
-                      src={images[currentImageIndex].data}
+                      src={getImageDisplayUrl(images[currentImageIndex])}
                       alt={images[currentImageIndex].name}
                       className="max-w-full max-h-full object-contain"
                       style={{
@@ -638,7 +685,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                             }`}
                           >
                             <img
-                              src={image.data}
+                              src={getImageDisplayUrl(image)}
                               alt={image.name}
                               className="w-full h-full object-cover"
                             />

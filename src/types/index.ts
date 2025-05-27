@@ -18,10 +18,12 @@ export interface Project {
 
 export interface NoteImage {
   id: string;
-  data: string; // base64 encoded image data
+  url?: string; // Firebase Storage URL (preferred)
+  data?: string; // base64 encoded image data (fallback for backward compatibility)
   type: string; // MIME type (image/jpeg, image/png, etc.)
   name: string; // original filename or generated name
   size: number; // file size in bytes
+  storagePath?: string; // Firebase Storage path for deletion
   createdAt: Date;
 }
 
