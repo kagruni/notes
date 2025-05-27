@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Note, NoteImage } from '@/types';
 import { X, Plus, Hash, Edit2 } from 'lucide-react';
 import SpeechRecorder from './SpeechRecorder';
@@ -24,6 +24,11 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [speechError, setSpeechError] = useState('');
+
+  // Check if we're on mobile
+  const isMobile = typeof window !== 'undefined' && 
+    (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+     'ontouchstart' in window);
 
   useEffect(() => {
     if (note) {
@@ -73,8 +78,24 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setSpeechError(errorMessage);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    console.log('📝 Form submission started');
+    console.log('📝 Mode:', mode);
+    console.log('📝 Title:', title.trim());
+    console.log('📝 Content length:', content.trim().length);
+    console.log('📝 Tags:', tags);
+    console.log('📝 Images count:', images.length);
+    console.log('📝 Images details:', images.map(img => ({
+      id: img.id,
+      name: img.name,
+      type: img.type,
+      size: img.size,
+      dataLength: img.data.length
+    })));
+    
     if (mode === 'view') return;
     
     if (!title.trim()) {
@@ -87,18 +108,52 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
       return;
     }
 
+    // Prevent double submission
+    if (loading) {
+      console.log('📝 Preventing double submission');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      await onSubmit(title.trim(), content.trim(), tags, images.length > 0 ? images : undefined);
+      console.log('📝 Calling onSubmit with:', {
+        title: title.trim(),
+        contentLength: content.trim().length,
+        tagsCount: tags.length,
+        imagesCount: images.length
+      });
+      
+      await onSubmit(title.trim(), content.trim(), tags, images);
+      console.log('📝 Form submission successful');
       onClose();
     } catch (err: unknown) {
+      console.error('📝 Form submission failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to save note');
     } finally {
       setLoading(false);
     }
-  };
+  }, [mode, title, content, tags, images, loading, onSubmit, onClose]);
+
+  // Prevent background scroll on mobile when modal is open
+  useEffect(() => {
+    if (isOpen && isMobile) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    };
+  }, [isOpen, isMobile]);
 
   const getModalTitle = () => {
     switch (mode) {
@@ -114,7 +169,13 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      style={{ 
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain'
+      }}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -225,7 +286,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
             </>
           ) : (
             /* Edit/Create Mode */
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -236,6 +297,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  style={{ fontSize: isMobile ? '16px' : '14px' }}
                   placeholder="Enter note title"
                   required
                 />
@@ -258,6 +320,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   onChange={(e) => setContent(e.target.value)}
                   rows={12}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+                  style={{ fontSize: isMobile ? '16px' : '14px' }}
                   placeholder="Write your note content here... or use voice input above"
                   required
                 />
@@ -277,6 +340,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                       onChange={(e) => setCurrentTag(e.target.value)}
                       onKeyDown={handleTagKeyPress}
                       className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      style={{ fontSize: isMobile ? '16px' : '14px' }}
                       placeholder="Add a tag"
                     />
                   </div>
@@ -326,6 +390,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   type="button"
                   onClick={onClose}
                   className="flex-1 px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                  style={{ 
+                    WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation'
+                  }}
                 >
                   Cancel
                 </button>
@@ -333,6 +401,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                   type="submit"
                   disabled={loading}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors"
+                  style={{ 
+                    WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation'
+                  }}
                 >
                   {loading ? 'Saving...' : mode === 'edit' ? 'Update' : 'Create'}
                 </button>

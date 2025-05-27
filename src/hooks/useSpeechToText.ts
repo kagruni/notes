@@ -21,14 +21,41 @@ export function useSpeechToText(): UseSpeechToTextReturn {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const checkMicrophoneSupport = () => {
+    if (typeof window === 'undefined') return false;
+    
+    // Check if we're on HTTPS or localhost
+    const isSecureContext = window.location.protocol === 'https:' || 
+                          window.location.hostname === 'localhost' ||
+                          window.location.hostname === '127.0.0.1';
+    
+    if (!isSecureContext) {
+      return false;
+    }
+    
+    // Check if mediaDevices API is available
+    return navigator && 
+           navigator.mediaDevices && 
+           typeof navigator.mediaDevices.getUserMedia === 'function';
+  };
+
   const startRecording = useCallback(async () => {
     try {
       setError(null);
       setTranscription(null);
 
-      // Check if browser supports MediaRecorder
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Your browser does not support audio recording');
+      // Check browser support first
+      if (!checkMicrophoneSupport()) {
+        const isSecureContext = typeof window !== 'undefined' && 
+                               (window.location.protocol === 'https:' || 
+                                window.location.hostname === 'localhost' ||
+                                window.location.hostname === '127.0.0.1');
+        
+        if (!isSecureContext) {
+          throw new Error('Voice recording requires HTTPS. Please access the app via HTTPS or localhost for voice functionality.');
+        } else {
+          throw new Error('Your browser does not support audio recording');
+        }
       }
 
       // Request microphone permission
@@ -84,7 +111,21 @@ export function useSpeechToText(): UseSpeechToTextReturn {
 
     } catch (err) {
       console.error('Error starting recording:', err);
-      setError(err instanceof Error ? err.message : 'Failed to start recording');
+      
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError') {
+          setError('Microphone permission denied. Please allow microphone access and try again.');
+        } else if (err.name === 'NotFoundError') {
+          setError('No microphone found on this device.');
+        } else if (err.name === 'NotSupportedError') {
+          setError('Audio recording is not supported on this device.');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to start recording. Please ensure you are using HTTPS and have granted microphone permissions.');
+      }
+      
       setRecordingState('error');
     }
   }, []);

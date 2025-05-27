@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Mic, MicOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 
@@ -15,6 +15,7 @@ export default function SpeechRecorder({
   onError,
   disabled = false 
 }: SpeechRecorderProps) {
+  const [microphoneSupported, setMicrophoneSupported] = useState<boolean | null>(null);
   const {
     isRecording,
     recordingState,
@@ -25,6 +26,41 @@ export default function SpeechRecorder({
     clearTranscription,
     clearError,
   } = useSpeechToText();
+
+  // Check if we're on mobile
+  const isMobile = typeof window !== 'undefined' && 
+    (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+     'ontouchstart' in window);
+
+  // Check microphone support
+  const checkMicrophoneSupport = () => {
+    if (typeof window === 'undefined') return false;
+    
+    // Check if we're on HTTPS or localhost
+    const isSecureContext = window.location.protocol === 'https:' || 
+                          window.location.hostname === 'localhost' ||
+                          window.location.hostname === '127.0.0.1';
+    
+    if (!isSecureContext) {
+      setMicrophoneSupported(false);
+      return false;
+    }
+    
+    // Check if mediaDevices API is available
+    const hasMediaDevices = navigator && 
+                           navigator.mediaDevices && 
+                           typeof navigator.mediaDevices.getUserMedia === 'function';
+    
+    setMicrophoneSupported(hasMediaDevices);
+    return hasMediaDevices;
+  };
+
+  // Initialize microphone support check
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      checkMicrophoneSupport();
+    }
+  }, []);
 
   // Handle transcription completion
   useEffect(() => {
@@ -104,6 +140,16 @@ export default function SpeechRecorder({
     }
   };
 
+  // If microphone is not supported on mobile, don't show the component
+  if (isMobile && microphoneSupported === false) {
+    return (
+      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center space-x-1">
+        <AlertCircle className="w-3 h-3" />
+        <span>Voice input requires HTTPS</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center space-x-2">
       <button
@@ -116,6 +162,10 @@ export default function SpeechRecorder({
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
           ${isRecording ? 'animate-pulse' : ''}
         `}
+        style={{ 
+          WebkitTapHighlightColor: 'transparent',
+          touchAction: 'manipulation'
+        }}
         title={getTooltip()}
       >
         {getIcon()}
@@ -146,6 +196,10 @@ export default function SpeechRecorder({
           <button
             onClick={clearError}
             className="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 underline"
+            style={{ 
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'manipulation'
+            }}
           >
             Dismiss
           </button>
