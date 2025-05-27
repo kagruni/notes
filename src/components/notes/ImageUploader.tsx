@@ -7,10 +7,11 @@ import { NoteImage } from '@/types';
 interface ImageUploaderProps {
   images: NoteImage[];
   onImagesChange: (images: NoteImage[]) => void;
+  onImageClick?: (imageIndex: number) => void;
   disabled?: boolean;
 }
 
-export default function ImageUploader({ images, onImagesChange, disabled = false }: ImageUploaderProps) {
+export default function ImageUploader({ images, onImagesChange, onImageClick, disabled = false }: ImageUploaderProps) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -52,13 +53,13 @@ export default function ImageUploader({ images, onImagesChange, disabled = false
     return `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  const compressImageForMobile = useCallback((canvas: HTMLCanvasElement, quality: number = 0.6): string => {
+  const compressImageForMobile = useCallback((canvas: HTMLCanvasElement, quality: number = 0.8): string => {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas context not available');
     
-    // Reduce canvas size for mobile to save memory
-    const maxWidth = isMobile ? 800 : 1200;
-    const maxHeight = isMobile ? 800 : 1200;
+    // Increase max dimensions for better quality while still being mobile-friendly
+    const maxWidth = isMobile ? 1200 : 1600;
+    const maxHeight = isMobile ? 1200 : 1600;
     
     if (canvas.width > maxWidth || canvas.height > maxHeight) {
       const ratio = Math.min(maxWidth / canvas.width, maxHeight / canvas.height);
@@ -72,6 +73,9 @@ export default function ImageUploader({ images, onImagesChange, disabled = false
       const compressedCtx = compressedCanvas.getContext('2d');
       
       if (compressedCtx) {
+        // Use better image smoothing for higher quality
+        compressedCtx.imageSmoothingEnabled = true;
+        compressedCtx.imageSmoothingQuality = 'high';
         compressedCtx.drawImage(canvas, 0, 0, newWidth, newHeight);
         return compressedCanvas.toDataURL('image/jpeg', quality);
       }
@@ -97,7 +101,7 @@ export default function ImageUploader({ images, onImagesChange, disabled = false
         ctx.drawImage(img, 0, 0);
         
         try {
-          const base64Data = compressImageForMobile(canvas, isMobile ? 0.5 : 0.8);
+          const base64Data = compressImageForMobile(canvas, isMobile ? 0.75 : 0.85);
           resolve(base64Data);
         } catch (error) {
           reject(error);
@@ -252,7 +256,7 @@ export default function ImageUploader({ images, onImagesChange, disabled = false
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       // Use the same compression as file uploads
-      const base64Data = compressImageForMobile(canvas, isMobile ? 0.5 : 0.8);
+      const base64Data = compressImageForMobile(canvas, isMobile ? 0.75 : 0.85);
       console.log('📸 Base64 conversion completed, length:', base64Data.length);
 
       const noteImage: NoteImage = {
@@ -405,13 +409,17 @@ export default function ImageUploader({ images, onImagesChange, disabled = false
             Images ({images.length})
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {images.map((image) => (
+            {images.map((image, index) => (
               <div key={image.id} className="relative group">
                 <img
                   src={image.data}
                   alt={image.name}
                   className="w-full h-24 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={() => window.open(image.data, '_blank')}
+                  onClick={() => {
+                    if (onImageClick) {
+                      onImageClick(index);
+                    }
+                  }}
                 />
                 <button
                   type="button"

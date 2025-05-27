@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Note, NoteImage } from '@/types';
-import { X, Plus, Hash, Edit2 } from 'lucide-react';
+import { X, Plus, Hash, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
 import SpeechRecorder from './SpeechRecorder';
 import ImageUploader from './ImageUploader';
 
@@ -24,6 +24,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [speechError, setSpeechError] = useState('');
+  
+  // Image gallery state
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Check if we're on mobile
   const isMobile = typeof window !== 'undefined' && 
@@ -45,6 +49,8 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setCurrentTag('');
     setError('');
     setSpeechError('');
+    setGalleryOpen(false);
+    setCurrentImageIndex(0);
   }, [note, isOpen]);
 
   const handleAddTag = () => {
@@ -166,6 +172,78 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     }
   };
 
+  // Gallery navigation functions
+  const openGallery = (imageIndex: number) => {
+    setCurrentImageIndex(imageIndex);
+    setGalleryOpen(true);
+  };
+
+  const closeGallery = () => {
+    setGalleryOpen(false);
+  };
+
+  const goToPreviousImage = () => {
+    if (currentImageIndex > 0) {
+      setCurrentImageIndex(currentImageIndex - 1);
+    }
+  };
+
+  const goToNextImage = () => {
+    if (currentImageIndex < images.length - 1) {
+      setCurrentImageIndex(currentImageIndex + 1);
+    }
+  };
+
+  // Handle keyboard navigation in gallery
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!galleryOpen) return;
+      
+      switch (e.key) {
+        case 'Escape':
+          closeGallery();
+          break;
+        case 'ArrowLeft':
+          goToPreviousImage();
+          break;
+        case 'ArrowRight':
+          goToNextImage();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [galleryOpen, currentImageIndex, images.length]);
+
+  // Safe date formatting function
+  const formatImageDate = (createdAt: any): string => {
+    try {
+      if (!createdAt) return 'Unknown';
+      
+      // If it's already a Date object
+      if (createdAt instanceof Date) {
+        return createdAt.toLocaleDateString();
+      }
+      
+      // If it's a Firestore Timestamp
+      if (createdAt.toDate && typeof createdAt.toDate === 'function') {
+        return createdAt.toDate().toLocaleDateString();
+      }
+      
+      // If it's a string or number, try to parse it
+      const date = new Date(createdAt);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleDateString();
+      }
+      
+      return 'Unknown';
+    } catch (error) {
+      console.warn('Error formatting image date:', error);
+      return 'Unknown';
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -262,7 +340,9 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                           src={image.data}
                           alt={image.name}
                           className="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(image.data, '_blank')}
+                          onClick={() => {
+                            openGallery(images.indexOf(image));
+                          }}
                         />
                         <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg truncate">
                           {image.name}
@@ -380,6 +460,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                 <ImageUploader
                   images={images}
                   onImagesChange={setImages}
+                  onImageClick={openGallery}
                   disabled={loading}
                 />
               </div>
@@ -413,6 +494,113 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
           )}
         </div>
       </div>
+
+      {/* Image Gallery */}
+      {galleryOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[60] p-4"
+          onClick={closeGallery}
+        >
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-4">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Image Gallery
+                </h2>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {currentImageIndex + 1} of {images.length}
+                </span>
+              </div>
+              <button
+                onClick={closeGallery}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="relative">
+              {images.length > 0 && (
+                <>
+                  {/* Main Image */}
+                  <div className="relative bg-black flex items-center justify-center min-h-[400px] max-h-[60vh]">
+                    <img
+                      src={images[currentImageIndex].data}
+                      alt={images[currentImageIndex].name}
+                      className="max-w-full max-h-full object-contain"
+                      style={{
+                        imageRendering: 'auto'
+                      }}
+                    />
+                    
+                    {/* Navigation Buttons */}
+                    {images.length > 1 && (
+                      <>
+                        <button
+                          onClick={goToPreviousImage}
+                          disabled={currentImageIndex === 0}
+                          className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-2 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronLeft className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={goToNextImage}
+                          disabled={currentImageIndex === images.length - 1}
+                          className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-2 rounded-full transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronRight className="w-6 h-6" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  
+                  {/* Image Info */}
+                  <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      {images[currentImageIndex].name}
+                    </h3>
+                    <div className="flex flex-wrap gap-4 text-sm text-gray-500 dark:text-gray-400">
+                      <span>Type: {images[currentImageIndex].type}</span>
+                      <span>Size: {(images[currentImageIndex].size / 1024).toFixed(1)} KB</span>
+                      <span>Added: {formatImageDate(images[currentImageIndex].createdAt)}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Thumbnail Navigation */}
+                  {images.length > 1 && (
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {images.map((image, index) => (
+                          <button
+                            key={image.id}
+                            onClick={() => setCurrentImageIndex(index)}
+                            className={`flex-shrink-0 w-16 h-16 rounded-md overflow-hidden border-2 transition-all ${
+                              index === currentImageIndex
+                                ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
+                                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                            }`}
+                          >
+                            <img
+                              src={image.data}
+                              alt={image.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
