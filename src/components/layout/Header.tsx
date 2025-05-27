@@ -36,7 +36,10 @@ export default function Header() {
           <div className="flex items-center space-x-4">
             {/* Theme toggle */}
             <button
-              onClick={toggleTheme}
+              onClick={() => {
+                console.log('Theme toggle button clicked!');
+                toggleTheme();
+              }}
               className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               aria-label="Toggle theme"
             >
