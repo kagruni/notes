@@ -128,52 +128,8 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setSpeechError('');
   };
 
-  // Handle textarea focus to track cursor position
-  const handleTextareaFocus = () => {
-    // Immediately capture cursor position on focus
-    setTimeout(() => {
-      const textarea = contentTextareaRef.current;
-      if (textarea) {
-        // This is a placeholder for the removed state variables
-      }
-    }, 0);
-  };
-
-  // Handle textarea blur but preserve cursor position for potential voice input
-  const handleTextareaBlur = () => {
-    // On mobile, keep textareaWasFocused true for a short time to handle voice input
-    if (isMobile) {
-      setTimeout(() => {
-        // Only reset if user hasn't interacted with voice input
-        // This is a placeholder for the removed state variable
-      }, 1000); // Give 1 second for voice input to start
-    }
-  };
-
-  // Handle selection change to update cursor position while focused
-  const handleTextareaSelectionChange = () => {
-    // This is a placeholder for the removed state variable
-  };
-
-  // Handle mobile touch events
-  const handleTextareaTouchEnd = () => {
-    if (isMobile) {
-      setTimeout(() => {
-        // This is a placeholder for the removed state variable
-      }, 100); // Small delay to ensure selection is updated
-    }
-  };
-
   const handleSpeechError = (errorMessage: string) => {
     setSpeechError(errorMessage);
-  };
-
-  // Handle when voice recording starts to extend focus tracking
-  const handleVoiceRecordingStart = () => {
-    if (isMobile) {
-      // Extend the focus tracking period when voice recording starts
-      // This is a placeholder for the removed state variable
-    }
   };
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -274,17 +230,17 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     setGalleryOpen(false);
   };
 
-  const goToPreviousImage = () => {
+  const goToPreviousImage = useCallback(() => {
     if (currentImageIndex > 0) {
       setCurrentImageIndex(currentImageIndex - 1);
     }
-  };
+  }, [currentImageIndex]);
 
-  const goToNextImage = () => {
+  const goToNextImage = useCallback(() => {
     if (currentImageIndex < images.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
     }
-  };
+  }, [currentImageIndex, images.length]);
 
   // Handle keyboard navigation in gallery
   useEffect(() => {
@@ -306,10 +262,10 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [galleryOpen, currentImageIndex, images.length]);
+  }, [galleryOpen, goToPreviousImage, goToNextImage]);
 
   // Safe date formatting function
-  const formatImageDate = (createdAt: any): string => {
+  const formatImageDate = (createdAt: unknown): string => {
     try {
       if (!createdAt) return 'Unknown';
       
@@ -319,12 +275,15 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
       }
       
       // If it's a Firestore Timestamp
-      if (createdAt.toDate && typeof createdAt.toDate === 'function') {
-        return createdAt.toDate().toLocaleDateString();
+      if (typeof createdAt === 'object' && createdAt !== null && 'toDate' in createdAt) {
+        const timestamp = createdAt as { toDate: () => Date };
+        if (typeof timestamp.toDate === 'function') {
+          return timestamp.toDate().toLocaleDateString();
+        }
       }
       
       // If it's a string or number, try to parse it
-      const date = new Date(createdAt);
+      const date = new Date(createdAt as string | number);
       if (!isNaN(date.getTime())) {
         return date.toLocaleDateString();
       }
