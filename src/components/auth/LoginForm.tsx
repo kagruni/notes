@@ -22,8 +22,8 @@ export default function LoginForm({ onToggleMode }: LoginFormProps) {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred during login');
     } finally {
       setLoading(false);
     }
@@ -36,8 +36,8 @@ export default function LoginForm({ onToggleMode }: LoginFormProps) {
 
     try {
       await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred during Google login');
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export default function LoginForm({ onToggleMode }: LoginFormProps) {
       </div>
 
       <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-        Don't have an account?{' '}
+        Don&apos;t have an account?{' '}
         <button
           onClick={onToggleMode}
           className="text-blue-600 dark:text-blue-400 hover:underline font-medium"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Camera, Upload, X, Image as ImageIcon } from 'lucide-react';
+import { Camera, Upload, X } from 'lucide-react';
 import { NoteImage } from '@/types';
 
 interface ImageUploaderProps {

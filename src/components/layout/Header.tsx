@@ -5,7 +5,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Sun, Moon, User, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, User, LogOut } from 'lucide-react';
 
 export default function Header() {
   const { user } = useAuth();

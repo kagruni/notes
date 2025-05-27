@@ -93,8 +93,8 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
     try {
       await onSubmit(title.trim(), content.trim(), tags, images.length > 0 ? images : undefined);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save note');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save note');
     } finally {
       setLoading(false);
     }

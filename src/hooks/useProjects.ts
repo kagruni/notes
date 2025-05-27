@@ -90,10 +90,12 @@ export function useProjects() {
       console.log('Project created successfully with ID:', docRef.id);
     } catch (err) {
       console.error('Detailed error creating project:', err);
-      console.error('Error code:', (err as any)?.code);
-      console.error('Error message:', (err as any)?.message);
+      const errorCode = err instanceof Error && 'code' in err ? (err as { code: string }).code : 'unknown';
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error code:', errorCode);
+      console.error('Error message:', errorMessage);
       console.error('Full error object:', err);
-      throw new Error(`Failed to create project: ${(err as any)?.message || 'Unknown error'}`);
+      throw new Error(`Failed to create project: ${errorMessage}`);
     }
   };
 
@@ -102,10 +104,10 @@ export function useProjects() {
       // Filter out undefined values to prevent Firebase errors
       const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
         if (value !== undefined) {
-          acc[key] = value;
+          (acc as Record<string, unknown>)[key] = value;
         }
         return acc;
-      }, {} as any);
+      }, {} as Partial<Pick<Project, 'title' | 'description' | 'color'>>);
 
       await updateDoc(doc(db, 'projects', projectId), {
         ...filteredUpdates,

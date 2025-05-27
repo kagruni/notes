@@ -6,7 +6,7 @@ import { Project } from '@/types';
 import ProjectCard from './projects/ProjectCard';
 import ProjectModal from './projects/ProjectModal';
 import NotesView from './notes/NotesView';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 export default function Dashboard() {
   const { projects, loading, error, createProject, updateProject, deleteProject } = useProjects();

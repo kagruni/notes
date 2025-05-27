@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { Mail, Lock, Chrome, User } from 'lucide-react';
+import { Mail, Lock, Chrome } from 'lucide-react';
 
 interface SignupFormProps {
   onToggleMode: () => void;
@@ -35,8 +35,8 @@ export default function SignupForm({ onToggleMode }: SignupFormProps) {
 
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred during signup');
     } finally {
       setLoading(false);
     }
@@ -49,8 +49,8 @@ export default function SignupForm({ onToggleMode }: SignupFormProps) {
 
     try {
       await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred during Google signup');
     } finally {
       setLoading(false);
     }

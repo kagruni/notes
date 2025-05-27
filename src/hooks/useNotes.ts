@@ -84,10 +84,10 @@ export function useNotes(projectId?: string) {
       // Filter out undefined values to prevent Firebase errors
       const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
         if (value !== undefined) {
-          acc[key] = value;
+          (acc as Record<string, unknown>)[key] = value;
         }
         return acc;
-      }, {} as any);
+      }, {} as Partial<Pick<Note, 'title' | 'content' | 'tags' | 'images'>>);
 
       await updateDoc(doc(db, 'notes', noteId), {
         ...filteredUpdates,

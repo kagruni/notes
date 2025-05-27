@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { Mic, MicOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { useSpeechToText, RecordingState } from '@/hooks/useSpeechToText';
+import { useSpeechToText } from '@/hooks/useSpeechToText';
 
 interface SpeechRecorderProps {
   onTranscriptionComplete: (text: string) => void;
