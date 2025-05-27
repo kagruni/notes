@@ -16,6 +16,15 @@ export interface Project {
   color?: string;
 }
 
+export interface NoteImage {
+  id: string;
+  data: string; // base64 encoded image data
+  type: string; // MIME type (image/jpeg, image/png, etc.)
+  name: string; // original filename or generated name
+  size: number; // file size in bytes
+  createdAt: Date;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -25,6 +34,7 @@ export interface Note {
   createdAt: Date;
   updatedAt: Date;
   tags?: string[];
+  images?: NoteImage[];
 }
 
 export interface Theme {

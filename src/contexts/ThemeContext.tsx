@@ -31,24 +31,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoading) {
       // Apply theme to document
-      console.log('Applying theme:', theme);
       if (theme === 'dark') {
         document.documentElement.classList.add('dark');
-        console.log('Added dark class to html');
       } else {
         document.documentElement.classList.remove('dark');
-        console.log('Removed dark class from html');
       }
       localStorage.setItem('theme', theme);
-      console.log('Document element classes:', document.documentElement.className);
     }
   }, [theme, isLoading]);
 
   const toggleTheme = () => {
-    console.log('Toggle theme clicked! Current theme:', theme);
     setTheme(prev => {
       const newTheme = prev === 'light' ? 'dark' : 'light';
-      console.log('Setting new theme to:', newTheme);
       return newTheme;
     });
   };

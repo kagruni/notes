@@ -2,15 +2,16 @@
 
 import { useState } from 'react';
 import { Note } from '@/types';
-import { MoreHorizontal, Edit2, Trash2, Tag } from 'lucide-react';
+import { MoreHorizontal, Edit2, Trash2, Tag, Image as ImageIcon } from 'lucide-react';
 
 interface NoteCardProps {
   note: Note;
+  onView: (note: Note) => void;
   onEdit: (note: Note) => void;
   onDelete: (noteId: string) => void;
 }
 
-export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
+export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   const formatDate = (date: Date) => {
@@ -28,7 +29,10 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all">
+    <div 
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all cursor-pointer"
+      onClick={() => onView(note)}
+    >
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate flex-1">
           {note.title}
@@ -36,7 +40,10 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
         
         <div className="relative ml-2">
           <button
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
             className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <MoreHorizontal className="w-4 h-4" />
@@ -46,7 +53,8 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
             <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
               <div className="py-1">
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onEdit(note);
                     setShowMenu(false);
                   }}
@@ -56,7 +64,8 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
                   <span>Edit</span>
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onDelete(note.id);
                     setShowMenu(false);
                   }}
@@ -76,6 +85,35 @@ export default function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
           {truncateContent(note.content)}
         </p>
       </div>
+
+      {/* Images preview */}
+      {note.images && note.images.length > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center space-x-2 mb-2">
+            <ImageIcon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {note.images.length} image{note.images.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {note.images.slice(0, 3).map((image) => (
+              <img
+                key={image.id}
+                src={image.data}
+                alt={image.name}
+                className="w-full h-16 object-cover rounded border border-gray-200 dark:border-gray-600"
+              />
+            ))}
+            {note.images.length > 3 && (
+              <div className="w-full h-16 bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 flex items-center justify-center">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  +{note.images.length - 3}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {note.tags && note.tags.length > 0 && (
         <div className="mb-3">

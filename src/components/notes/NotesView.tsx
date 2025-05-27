@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
-import { Project, Note } from '@/types';
+import { Project, Note, NoteImage } from '@/types';
 import { ArrowLeft, Plus, Search, StickyNote } from 'lucide-react';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
@@ -16,6 +16,8 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const { notes, loading, error, createNote, updateNote, deleteNote } = useNotes(project.id);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create'>('create');
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredNotes = notes.filter(note =>
@@ -23,19 +25,34 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleCreateNote = async (title: string, content: string, tags: string[]) => {
-    await createNote(title, content, project.id, tags);
+  const handleSubmitNote = async (title: string, content: string, tags: string[], images?: NoteImage[]) => {
+    await createNote(title, content, project.id, tags, images);
   };
 
-  const handleUpdateNote = async (title: string, content: string, tags: string[]) => {
+  const handleUpdateNote = async (title: string, content: string, tags: string[], images?: NoteImage[]) => {
     if (editingNote) {
-      await updateNote(editingNote.id, { title, content, tags });
+      await updateNote(editingNote.id, { title, content, tags, images });
     }
+  };
+
+  const handleViewNote = (note: Note) => {
+    setViewingNote(note);
+    setModalMode('view');
+    setShowNoteModal(true);
   };
 
   const handleEditNote = (note: Note) => {
     setEditingNote(note);
+    setModalMode('edit');
     setShowNoteModal(true);
+  };
+
+  const handleEditFromView = () => {
+    if (viewingNote) {
+      setEditingNote(viewingNote);
+      setViewingNote(null);
+      setModalMode('edit');
+    }
   };
 
   const handleDeleteNote = async (noteId: string) => {
@@ -47,6 +64,13 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const closeModal = () => {
     setShowNoteModal(false);
     setEditingNote(null);
+    setViewingNote(null);
+    setModalMode('create');
+  };
+
+  const handleCreateNote = () => {
+    setModalMode('create');
+    setShowNoteModal(true);
   };
 
   return (
@@ -74,7 +98,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         </div>
         
         <button
-          onClick={() => setShowNoteModal(true)}
+          onClick={handleCreateNote}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4" />
@@ -117,7 +141,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
             </div>
             {!searchTerm && (
               <button
-                onClick={() => setShowNoteModal(true)}
+                onClick={handleCreateNote}
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -131,6 +155,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               <NoteCard
                 key={note.id}
                 note={note}
+                onView={handleViewNote}
                 onEdit={handleEditNote}
                 onDelete={handleDeleteNote}
               />
@@ -143,8 +168,10 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
       <NoteModal
         isOpen={showNoteModal}
         onClose={closeModal}
-        onSubmit={editingNote ? handleUpdateNote : handleCreateNote}
-        note={editingNote}
+        onSubmit={modalMode === 'edit' ? handleUpdateNote : handleSubmitNote}
+        note={editingNote || viewingNote}
+        mode={modalMode}
+        onEdit={modalMode === 'view' ? handleEditFromView : undefined}
       />
     </div>
   );

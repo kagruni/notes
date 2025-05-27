@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Note } from '@/types';
+import { Note, NoteImage } from '@/types';
 
 export function useNotes(projectId?: string) {
   const { user } = useAuth();
@@ -59,7 +59,7 @@ export function useNotes(projectId?: string) {
     return () => unsubscribe();
   }, [user, projectId]);
 
-  const createNote = async (title: string, content: string, projectId: string, tags: string[]) => {
+  const createNote = async (title: string, content: string, projectId: string, tags: string[], images?: NoteImage[]) => {
     if (!user) throw new Error('User not authenticated');
 
     try {
@@ -69,6 +69,7 @@ export function useNotes(projectId?: string) {
         projectId,
         userId: user.uid,
         tags: tags,
+        images: images || [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -78,7 +79,7 @@ export function useNotes(projectId?: string) {
     }
   };
 
-  const updateNote = async (noteId: string, updates: Partial<Pick<Note, 'title' | 'content' | 'tags'>>) => {
+  const updateNote = async (noteId: string, updates: Partial<Pick<Note, 'title' | 'content' | 'tags' | 'images'>>) => {
     try {
       // Filter out undefined values to prevent Firebase errors
       const filteredUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
