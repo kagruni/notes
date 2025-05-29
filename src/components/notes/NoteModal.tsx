@@ -78,6 +78,9 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
   const handleTranscriptionComplete = (transcribedText: string) => {
     const textarea = contentTextareaRef.current;
     
+    // Trim the transcribed text to remove any leading/trailing spaces
+    const trimmedTranscription = transcribedText.trim();
+    
     if (textarea) {
       // Get current cursor position
       const currentStart = textarea.selectionStart;
@@ -94,7 +97,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
         const afterCursor = currentContent.substring(currentEnd);
         
         // Add appropriate spacing
-        let insertText = transcribedText;
+        let insertText = trimmedTranscription;
         if (beforeCursor && !beforeCursor.endsWith(' ') && !beforeCursor.endsWith('\n')) {
           insertText = ' ' + insertText;
         }
@@ -115,15 +118,15 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
       } else {
         // Cursor is at the end or no specific position - append normally
         const newContent = currentContent.trim() 
-          ? `${currentContent} ${transcribedText}` 
-          : transcribedText;
+          ? `${currentContent} ${trimmedTranscription}` 
+          : trimmedTranscription;
         setContent(newContent);
       }
     } else {
       // Fallback - just append to end
       const newContent = content.trim() 
-        ? `${content} ${transcribedText}` 
-        : transcribedText;
+        ? `${content} ${trimmedTranscription}` 
+        : trimmedTranscription;
       setContent(newContent);
     }
     
