@@ -117,17 +117,31 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
         }, 0);
       } else {
         // Cursor is at the end or no specific position - append normally
-        const newContent = currentContent.trim() 
-          ? `${currentContent} ${trimmedTranscription}` 
-          : trimmedTranscription;
-        setContent(newContent);
+        if (currentContent.length === 0) {
+          // If content is empty, just add the transcription without any space
+          setContent(trimmedTranscription);
+        } else {
+          // If there's existing content, add appropriate spacing
+          const needsSpace = !currentContent.endsWith(' ') && !currentContent.endsWith('\n');
+          const newContent = needsSpace 
+            ? `${currentContent} ${trimmedTranscription}` 
+            : `${currentContent}${trimmedTranscription}`;
+          setContent(newContent);
+        }
       }
     } else {
       // Fallback - just append to end
-      const newContent = content.trim() 
-        ? `${content} ${trimmedTranscription}` 
-        : trimmedTranscription;
-      setContent(newContent);
+      if (content.length === 0) {
+        // If content is empty, just add the transcription without any space
+        setContent(trimmedTranscription);
+      } else {
+        // If there's existing content, add appropriate spacing
+        const needsSpace = !content.endsWith(' ') && !content.endsWith('\n');
+        const newContent = needsSpace 
+          ? `${content} ${trimmedTranscription}` 
+          : `${content}${trimmedTranscription}`;
+        setContent(newContent);
+      }
     }
     
     setSpeechError('');
