@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Configure dark mode for Tailwind CSS v4 */
+@variant dark (&:where(.dark, .dark *));
+
 /* Mobile-specific fixes for iOS and Android */
 @media (max-width: 768px) {
   /* Prevent zoom on input focus for iOS */

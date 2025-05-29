@@ -14,8 +14,10 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme['mode']>('light');
   const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     // Check saved theme or system preference
     const savedTheme = localStorage.getItem('theme') as Theme['mode'] | null;
     console.log('Initializing theme. Saved theme:', savedTheme);
@@ -33,25 +35,34 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && mounted) {
       // Apply theme to document - Tailwind only needs dark class
       const htmlElement = document.documentElement;
       
       console.log('Applying theme:', theme);
       console.log('HTML element before:', htmlElement.className);
+      console.log('Document ready state:', document.readyState);
       
+      // Force a reflow to ensure the class is applied
       if (theme === 'dark') {
+        htmlElement.classList.remove('light');
         htmlElement.classList.add('dark');
+        htmlElement.style.colorScheme = 'dark';
       } else {
         htmlElement.classList.remove('dark');
+        htmlElement.classList.add('light');
+        htmlElement.style.colorScheme = 'light';
       }
       
       localStorage.setItem('theme', theme);
       
       console.log('HTML element after:', htmlElement.className);
       console.log('LocalStorage theme set to:', localStorage.getItem('theme'));
+      
+      // Force a repaint
+      void htmlElement.offsetHeight;
     }
-  }, [theme, isLoading]);
+  }, [theme, isLoading, mounted]);
 
   const toggleTheme = () => {
     console.log('=== TOGGLE THEME CALLED ===');
