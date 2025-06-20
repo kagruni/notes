@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Note } from '@/types';
 import puppeteer from 'puppeteer';
+import { getCalendarWeek, formatCalendarWeek, groupNotesByCalendarWeek } from '@/utils/date';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,47 +23,90 @@ export async function POST(request: NextRequest) {
     
     console.log('OpenAI API key found:', openAIApiKey.substring(0, 10) + '...');
 
-    // Format notes content for OpenAI including images
-    const notesContent = notes.map((note: Note) => {
-      let content = `Title: ${note.title}\n\n${note.content}`;
+    // Convert date strings to Date objects
+    const notesWithDates = notes.map(note => ({
+      ...note,
+      createdAt: new Date(note.createdAt),
+      updatedAt: new Date(note.updatedAt)
+    }));
+    
+    // Group notes by calendar week and format for OpenAI
+    const groupedNotes = groupNotesByCalendarWeek(notesWithDates);
+    
+    const notesContent = groupedNotes.map((group) => {
+      let weekContent = `CALENDAR WEEK: ${group.weekLabel}\n\n`;
       
-      if (note.tags && note.tags.length > 0) {
-        content += `\n\nTags: ${note.tags.join(', ')}`;
-      }
-      
-      if (note.images && note.images.length > 0) {
-        content += `\n\nImages (${note.images.length}):`;
-        note.images.forEach((image, index) => {
-          if (image.url) {
-            content += `\n- Image ${index + 1}: ${image.name} (URL: ${image.url})`;
-          } else if (image.data) {
-            content += `\n- Image ${index + 1}: ${image.name} (base64 data available)`;
-          }
+      group.notes.forEach((note) => {
+        const createdDate = new Date(note.createdAt).toLocaleDateString('de-DE', {
+          weekday: 'long',
+          year: 'numeric', 
+          month: 'long',
+          day: 'numeric'
         });
-      }
+        
+        weekContent += `Note Title: ${note.title}\n`;
+        weekContent += `Created: ${createdDate}\n`;
+        weekContent += `Content: ${note.content}\n`;
+        
+        if (note.tags && note.tags.length > 0) {
+          weekContent += `Tags: ${note.tags.join(', ')}\n`;
+        }
+        
+        if (note.images && note.images.length > 0) {
+          weekContent += `Images (${note.images.length} total for this note):\n`;
+          note.images.forEach((image, index) => {
+            if (image.url) {
+              weekContent += `  - Image ${index + 1}: ${image.name} (URL: ${image.url})\n`;
+            } else if (image.data) {
+              weekContent += `  - Image ${index + 1}: ${image.name} (base64 data available)\n`;
+            }
+          });
+        }
+        
+        weekContent += `\n---\n\n`;
+      });
       
-      return content;
-    }).join('\n\n---\n\n');
+      return weekContent;
+    }).join('\n=== END OF WEEK ===\n\n');
 
     // Create OpenAI prompt
     const prompt = `Please create a comprehensive summary of the following notes from the project "${projectTitle}".
 
+CRITICAL LANGUAGE REQUIREMENT:
+- ALWAYS write your summary in the SAME LANGUAGE as the input notes
+- If notes are in German, respond in German
+- If notes are in English, respond in English
+- Match the language style and terminology of the original notes
+
 FORMATTING REQUIREMENTS:
 - Return your response in clean HTML format suitable for PDF conversion
 - Use proper HTML structure with headings (h1, h2, h3), paragraphs, and lists
+- Structure content by calendar weeks with clear week headers
+- Show creation date for each note entry
+- Group images by note - if a note has multiple images, display them together under that note
 - When you find hour recordings or worker time entries, format them as HTML tables with proper headers
 - For any images mentioned with URLs, include them as <img> tags with the provided URLs
-- Include a professional summary section at the top
-- Maintain the chronological order of the original notes
-- Use CSS-friendly classes for styling (e.g., class="summary-section", class="note-section", class="hours-table")
+- Use CSS-friendly classes for styling (e.g., class="week-section", class="note-entry", class="hours-table", class="image-group")
+
+CONTENT STRUCTURE:
+1. Overall project summary at the top (in the language of the notes)
+2. For each calendar week:
+   - Week heading (e.g., "Kalenderwoche 25, 2025" if German notes)
+   - For each note in that week:
+     - Note title and creation date
+     - Note content summary
+     - All images for that note grouped together
+     - Worker hours table if present
+3. Maintain chronological order within each week
 
 SPECIAL INSTRUCTIONS:
 - If notes contain worker hours/time entries (like "Besim/ Ion/ Sascha: 07:00 - 17:00"), format these as tables
-- Include all images that have URLs provided
+- Group images by note - show all images for a note together, not one per page
+- Include creation dates prominently for each note
 - Highlight key milestones and progress points
-- Create section headings for different days/phases
+- Use the exact calendar week labels provided in the input
 
-Notes to summarize:
+Notes organized by calendar week:
 
 ${notesContent}
 
@@ -86,7 +130,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
           messages: [
             {
               role: 'system',
-              content: 'You are a professional document summarizer specialized in construction project reports. Create clear, concise, and well-structured HTML summaries. When you encounter worker hours or time entries, always format them as HTML tables. Include images using img tags when URLs are provided. Focus on progress, milestones, and key activities.'
+              content: 'You are a professional document summarizer specialized in construction project reports. CRITICAL: Always respond in the SAME LANGUAGE as the input notes (German notes = German response, English notes = English response). Create clear, well-structured HTML summaries organized by calendar weeks. Group images by note (not one per page). Format worker hours as HTML tables. Show creation dates for each note. Focus on progress, milestones, and key activities while maintaining the original language and terminology.'
             },
             {
               role: 'user',
@@ -201,6 +245,48 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             margin-top: 0;
         }
         
+        .week-section {
+            margin-bottom: 40px;
+            padding: 25px;
+            background-color: #f8fafc;
+            border-radius: 10px;
+            border-left: 5px solid #3b82f6;
+        }
+        
+        .week-header {
+            color: #1e40af;
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        
+        .note-entry {
+            margin-bottom: 25px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .note-header {
+            margin-bottom: 15px;
+        }
+        
+        .note-title {
+            color: #374151;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .note-date {
+            color: #6b7280;
+            font-size: 14px;
+            font-style: italic;
+        }
+        
         .note-section {
             margin-bottom: 30px;
             padding: 20px;
@@ -209,17 +295,36 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             border-left: 4px solid #6b7280;
         }
         
+        .image-group {
+            margin: 15px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .image-group img {
+            width: 100%;
+            height: auto;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
         .hours-table {
             width: 100%;
             border-collapse: collapse;
             margin: 15px 0;
             background-color: white;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
         .hours-table th,
         .hours-table td {
             border: 1px solid #d1d5db;
-            padding: 8px 12px;
+            padding: 10px 15px;
             text-align: left;
         }
         
@@ -232,7 +337,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
         img {
             max-width: 100%;
             height: auto;
-            margin: 10px 0;
+            margin: 5px;
             border-radius: 4px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
