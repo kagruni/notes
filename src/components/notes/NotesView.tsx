@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { Project, Note, NoteImage } from '@/types';
-import { ArrowLeft, Plus, Search, StickyNote } from 'lucide-react';
+import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square } from 'lucide-react';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
+import { groupNotesByCalendarWeek } from '@/utils/date';
 
 interface NotesViewProps {
   project: Project;
@@ -19,11 +20,16 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
   const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create'>('create');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const filteredNotes = notes.filter(note =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const groupedNotes = groupNotesByCalendarWeek(filteredNotes);
 
   const handleSubmitNote = async (title: string, content: string, tags: string[], images?: NoteImage[]) => {
     await createNote(title, content, project.id, tags, images);
@@ -73,6 +79,72 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     setShowNoteModal(true);
   };
 
+  const toggleNoteSelection = (noteId: string) => {
+    const newSelection = new Set(selectedNotes);
+    if (newSelection.has(noteId)) {
+      newSelection.delete(noteId);
+    } else {
+      newSelection.add(noteId);
+    }
+    setSelectedNotes(newSelection);
+  };
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    if (isSelectionMode) {
+      setSelectedNotes(new Set());
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    if (selectedNotes.size === 0) return;
+    
+    setIsGeneratingPDF(true);
+    try {
+      const selectedNotesData = notes.filter(note => selectedNotes.has(note.id));
+      
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notes: selectedNotesData,
+          projectTitle: project.title,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('PDF generation failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`Failed to generate PDF: ${response.status} - ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.title}_summary_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      setSelectedNotes(new Set());
+      setIsSelectionMode(false);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Failed to generate PDF summary: ${errorMessage}`);
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -97,13 +169,38 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
           </div>
         </div>
         
-        <button
-          onClick={handleCreateNote}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Note</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={toggleSelectionMode}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm ${
+              isSelectionMode
+                ? 'bg-gray-600 hover:bg-gray-700 text-white'
+                : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-700 text-gray-800 dark:text-white'
+            }`}
+          >
+            {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+            <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
+          </button>
+          
+          {isSelectionMode && selectedNotes.size > 0 && (
+            <button
+              onClick={handleGeneratePDF}
+              disabled={isGeneratingPDF}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+            >
+              <FileText className="w-4 h-4" />
+              <span>{isGeneratingPDF ? 'Generating...' : `Generate PDF (${selectedNotes.size})`}</span>
+            </button>
+          )}
+          
+          <button
+            onClick={handleCreateNote}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Note</span>
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -150,15 +247,27 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredNotes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onView={handleViewNote}
-                onEdit={handleEditNote}
-                onDelete={handleDeleteNote}
-              />
+          <div className="space-y-8">
+            {groupedNotes.map((group) => (
+              <div key={`${group.year}-${group.week}`}>
+                <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">
+                  {group.weekLabel}
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {group.notes.map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onView={handleViewNote}
+                      onEdit={handleEditNote}
+                      onDelete={handleDeleteNote}
+                      isSelectionMode={isSelectionMode}
+                      isSelected={selectedNotes.has(note.id)}
+                      onToggleSelect={() => toggleNoteSelection(note.id)}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

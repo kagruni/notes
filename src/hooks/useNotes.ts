@@ -33,7 +33,7 @@ export function useNotes(projectId?: string) {
       collection(db, 'notes'),
       where('userId', '==', user.uid),
       where('projectId', '==', projectId),
-      orderBy('updatedAt', 'desc')
+      orderBy('createdAt', 'desc')
     );
 
     const unsubscribe = onSnapshot(

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Note } from '@/types';
-import { MoreHorizontal, Edit2, Trash2, Tag, Image as ImageIcon } from 'lucide-react';
+import { MoreHorizontal, Edit2, Trash2, Tag, Image as ImageIcon, CheckSquare, Square } from 'lucide-react';
 import { getImageDisplayUrl } from '@/lib/imageStorage';
 
 interface NoteCardProps {
@@ -10,9 +10,20 @@ interface NoteCardProps {
   onView: (note: Note) => void;
   onEdit: (note: Note) => void;
   onDelete: (noteId: string) => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardProps) {
+export default function NoteCard({ 
+  note, 
+  onView, 
+  onEdit, 
+  onDelete, 
+  isSelectionMode = false, 
+  isSelected = false, 
+  onToggleSelect 
+}: NoteCardProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   const formatDate = (date: Date) => {
@@ -24,66 +35,88 @@ export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardPro
     }).format(date);
   };
 
-  const truncateContent = (content: string, maxLength: number = 150) => {
-    if (content.length <= maxLength) return content;
-    return content.substring(0, maxLength) + '...';
+  const handleCardClick = () => {
+    if (isSelectionMode && onToggleSelect) {
+      onToggleSelect();
+    } else {
+      onView(note);
+    }
   };
 
   return (
     <div 
-      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all cursor-pointer"
-      onClick={() => onView(note)}
+      className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-4 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all cursor-pointer h-[320px] flex flex-col relative ${
+        isSelected 
+          ? 'border-blue-500 dark:border-blue-400 border-2' 
+          : 'border-gray-200 dark:border-gray-700'
+      } ${isSelectionMode ? 'hover:border-blue-400' : ''}`}
+      onClick={handleCardClick}
     >
+      {/* Selection indicator overlay */}
+      {isSelectionMode && (
+        <div className="absolute inset-0 rounded-lg pointer-events-none">
+          <div className="absolute top-2 left-2">
+            {isSelected ? (
+              <CheckSquare className="w-6 h-6 text-blue-600 drop-shadow-md" />
+            ) : (
+              <Square className="w-6 h-6 text-gray-400 drop-shadow-md" />
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start justify-between mb-3">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate flex-1">
           {note.title}
         </h3>
         
-        <div className="relative ml-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+        {!isSelectionMode && (
+          <div className="relative ml-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
 
-          {showMenu && (
-            <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
-              <div className="py-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(note);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(note.id);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
+            {showMenu && (
+              <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                <div className="py-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(note);
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(note.id);
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="mb-4">
-        <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-          {truncateContent(note.content)}
+      <div className="flex-1 overflow-hidden mb-3">
+        <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed line-clamp-4">
+          {note.content}
         </p>
       </div>
 
@@ -137,8 +170,10 @@ export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardPro
         </div>
       )}
 
-      <div className="text-xs text-gray-500 dark:text-gray-400">
-        {formatDate(note.updatedAt)}
+      <div className="mt-auto">
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          {formatDate(note.updatedAt)}
+        </div>
       </div>
 
       {/* Click outside to close menu */}
@@ -150,4 +185,4 @@ export default function NoteCard({ note, onView, onEdit, onDelete }: NoteCardPro
       )}
     </div>
   );
-} 
+}

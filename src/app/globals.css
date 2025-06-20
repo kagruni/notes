@@ -3,6 +3,15 @@
 /* Configure dark mode for Tailwind CSS v4 */
 @variant dark (&:where(.dark, .dark *));
 
+/* Line clamp utility for note content */
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Mobile-specific fixes for iOS and Android */
 @media (max-width: 768px) {
   /* Prevent zoom on input focus for iOS */
