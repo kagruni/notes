@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Note } from '@/types';
 import puppeteer from 'puppeteer';
-import { getCalendarWeek, formatCalendarWeek, groupNotesByCalendarWeek } from '@/utils/date';
+import { groupNotesByCalendarWeek } from '@/utils/date';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     console.log('OpenAI API key found:', openAIApiKey.substring(0, 10) + '...');
 
     // Convert date strings to Date objects
-    const notesWithDates = notes.map(note => ({
+    const notesWithDates: Note[] = notes.map((note: Note) => ({
       ...note,
       createdAt: new Date(note.createdAt),
       updatedAt: new Date(note.updatedAt)
@@ -99,9 +99,32 @@ CONTENT STRUCTURE:
      - Worker hours table if present
 3. Maintain chronological order within each week
 
-SPECIAL INSTRUCTIONS:
-- If notes contain worker hours/time entries (like "Besim/ Ion/ Sascha: 07:00 - 17:00"), format these as tables
-- Group images by note - show all images for a note together, not one per page
+SPECIAL INSTRUCTIONS FOR WORKER HOURS:
+- When you find worker time entries (like "Besim/ Ion/ Sascha: 07:00 - 17:00"), create detailed HTML tables
+- IMPORTANT: Use table headers in the SAME LANGUAGE as the notes:
+  * German notes: Arbeiter | Beginn | Ende | Pause | Arbeitsstunden | Bemerkungen  
+  * English notes: Worker | Start | End | Break | Total Hours | Notes
+- Calculate: End - Start - Break (assume 1 hour break unless specified)
+
+EXAMPLE: If you see "Besim/ Dima/ Ion/ Sascha: 07:00 - 17:00" in German notes, create a table like:
+<table class="hours-table">
+<tr><th>Arbeiter</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Arbeitsstunden</th><th>Bemerkungen</th></tr>
+<tr><td>Besim</td><td>07:00</td><td>17:00</td><td>1h</td><td>9h</td><td></td></tr>
+<tr><td>Dima</td><td>07:00</td><td>17:00</td><td>1h</td><td>9h</td><td></td></tr>
+<tr><td>Ion</td><td>07:00</td><td>17:00</td><td>1h</td><td>9h</td><td></td></tr>
+<tr><td>Sascha</td><td>07:00</td><td>17:00</td><td>1h</td><td>9h</td><td></td></tr>
+</table>
+
+If English notes, use: Worker | Start | End | Break | Total Hours | Notes
+If German notes, use: Arbeiter | Beginn | Ende | Pause | Arbeitsstunden | Bemerkungen
+
+- Calculate work hours automatically: 17:00 - 07:00 = 10 hours total, minus 1 hour break = 9 hours worked
+- If workers have different hours, create separate rows or tables as needed
+- Use class="hours-table" for styling
+
+OTHER FORMATTING:
+- Group images by note - show all images for a note together in a two-column layout (max 300px width, 220px height)
+- Wrap multiple images in a div with class="image-container" for proper spacing
 - Include creation dates prominently for each note
 - Highlight key milestones and progress points
 - Use the exact calendar week labels provided in the input
@@ -130,7 +153,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
           messages: [
             {
               role: 'system',
-              content: 'You are a professional document summarizer specialized in construction project reports. CRITICAL: Always respond in the SAME LANGUAGE as the input notes (German notes = German response, English notes = English response). Create clear, well-structured HTML summaries organized by calendar weeks. Group images by note (not one per page). Format worker hours as HTML tables. Show creation dates for each note. Focus on progress, milestones, and key activities while maintaining the original language and terminology.'
+              content: 'You are a professional document summarizer specialized in construction project reports. CRITICAL: Always respond in the SAME LANGUAGE as the input notes (German notes = German response, English notes = English response). Create clear, well-structured HTML summaries organized by calendar weeks. For worker hours (like "07:00 - 17:00"), create detailed tables showing: Worker Name, Start Time, End Time, Break Time (assume 1 hour), Total Hours Worked (calculate: End - Start - Break), and Notes. Group images by note (not one per page). Show creation dates for each note. Focus on progress, milestones, and key activities while maintaining the original language and terminology.'
             },
             {
               role: 'user',
@@ -150,7 +173,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
         let errorData;
         try {
           errorData = JSON.parse(errorText);
-        } catch (e) {
+        } catch {
           errorData = { message: errorText };
         }
         
@@ -245,70 +268,12 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             margin-top: 0;
         }
         
-        .week-section {
-            margin-bottom: 40px;
-            padding: 25px;
-            background-color: #f8fafc;
-            border-radius: 10px;
-            border-left: 5px solid #3b82f6;
-        }
-        
-        .week-header {
-            color: #1e40af;
-            font-size: 22px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 10px;
-        }
-        
-        .note-entry {
-            margin-bottom: 25px;
-            padding: 20px;
-            background-color: white;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .note-header {
-            margin-bottom: 15px;
-        }
-        
-        .note-title {
-            color: #374151;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        
-        .note-date {
-            color: #6b7280;
-            font-size: 14px;
-            font-style: italic;
-        }
-        
         .note-section {
-            margin-bottom: 30px;
+            margin-bottom: 40px;
             padding: 20px;
             background-color: #f9fafb;
             border-radius: 8px;
-            border-left: 4px solid #6b7280;
-        }
-        
-        .image-group {
-            margin: 15px 0;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-        }
-        
-        .image-group img {
-            width: 100%;
-            height: auto;
-            max-height: 200px;
-            object-fit: cover;
-            border-radius: 6px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border: 1px solid #e5e7eb;
         }
         
         .hours-table {
@@ -316,15 +281,12 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             border-collapse: collapse;
             margin: 15px 0;
             background-color: white;
-            border-radius: 6px;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
         .hours-table th,
         .hours-table td {
             border: 1px solid #d1d5db;
-            padding: 10px 15px;
+            padding: 8px 12px;
             text-align: left;
         }
         
@@ -334,12 +296,29 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             color: #374151;
         }
         
+        .hours-table td:nth-child(2),
+        .hours-table td:nth-child(3),
+        .hours-table td:nth-child(4),
+        .hours-table td:nth-child(5) {
+            text-align: center;
+            font-family: monospace;
+        }
+        
         img {
-            max-width: 100%;
+            max-width: 300px;
+            max-height: 220px;
+            width: auto;
             height: auto;
-            margin: 5px;
+            margin: 5px 15px 5px 0;
             border-radius: 4px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: inline-block;
+            vertical-align: top;
+        }
+        
+        .image-container {
+            margin: 10px 0;
+            line-height: 0;
         }
         
         .tag {
