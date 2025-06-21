@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Note } from '@/types';
-import puppeteer from 'puppeteer';
 import { groupNotesByCalendarWeek } from '@/utils/date';
+import { chromium } from 'playwright';
 
 export async function POST(request: NextRequest) {
   try {
@@ -204,9 +204,9 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
       throw fetchError;
     }
 
-    console.log('Starting HTML to PDF generation');
-    
-    // Create complete HTML document
+    console.log('Starting Playwright PDF generation');
+
+    // Create HTML content for PDF
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -239,13 +239,6 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             font-size: 20px;
         }
         
-        h3 {
-            color: #374151;
-            margin-top: 25px;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-        
         .meta-info {
             background-color: #f3f4f6;
             padding: 15px;
@@ -268,12 +261,49 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             margin-top: 0;
         }
         
-        .note-section {
+        .week-section {
             margin-bottom: 40px;
             padding: 20px;
-            background-color: #f9fafb;
+            background-color: #f8fafc;
             border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .week-title {
+            color: #1e40af;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        .note-entry {
+            margin-bottom: 25px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 6px;
             border: 1px solid #e5e7eb;
+        }
+        
+        .note-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 5px;
+        }
+        
+        .note-date {
+            font-size: 12px;
+            color: #6b7280;
+            font-style: italic;
+            margin-bottom: 10px;
+        }
+        
+        .note-content {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #374151;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
         }
         
         .hours-table {
@@ -281,6 +311,8 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             border-collapse: collapse;
             margin: 15px 0;
             background-color: white;
+            border-radius: 6px;
+            overflow: hidden;
         }
         
         .hours-table th,
@@ -304,31 +336,11 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             font-family: monospace;
         }
         
-        img {
-            max-width: 300px;
-            max-height: 220px;
-            width: auto;
-            height: auto;
-            margin: 5px 15px 5px 0;
-            border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: inline-block;
-            vertical-align: top;
-        }
-        
-        .image-container {
-            margin: 10px 0;
-            line-height: 0;
-        }
-        
-        .tag {
-            display: inline-block;
-            background-color: #dbeafe;
-            color: #1e40af;
-            padding: 2px 8px;
-            border-radius: 12px;
+        .image-notice {
             font-size: 12px;
-            margin: 2px;
+            color: #3b82f6;
+            font-style: italic;
+            margin-top: 10px;
         }
         
         @media print {
@@ -349,100 +361,118 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
         Total notes: ${notes.length}
     </div>
     
-    ${summary}
+    <div class="summary-section">
+        <h2>AI-Generated Summary</h2>
+        <div class="note-content">${summary.replace(/\n/g, '<br>')}</div>
+    </div>
+    
+    ${groupedNotes.map(group => `
+        <div class="week-section">
+            <div class="week-title">${group.weekLabel}</div>
+            
+            ${group.notes.map(note => {
+              const createdDate = new Date(note.createdAt).toLocaleDateString('de-DE', {
+                weekday: 'long',
+                year: 'numeric', 
+                month: 'long',
+                day: 'numeric'
+              });
+
+              // Parse worker hours
+              let hoursTable = '';
+              if (note.content.includes(':') && (note.content.includes('07:00') || note.content.includes('Stunden'))) {
+                const lines = note.content.split('\n');
+                const workerLines = lines.filter(line => 
+                  line.includes(':') && (line.includes('07:00') || line.includes('Besim'))
+                );
+                
+                if (workerLines.length > 0) {
+                  hoursTable = `
+                    <table class="hours-table">
+                      <tr>
+                        <th>Arbeiter</th>
+                        <th>Beginn</th>
+                        <th>Ende</th>
+                        <th>Pause</th>
+                        <th>Stunden</th>
+                      </tr>
+                  `;
+                  
+                  workerLines.forEach(line => {
+                    const workers = line.split(':')[0].split('/').map(w => w.trim());
+                    const times = line.match(/\d{2}:\d{2}/g);
+                    if (times && times.length >= 2) {
+                      workers.forEach(worker => {
+                        hoursTable += `
+                          <tr>
+                            <td>${worker}</td>
+                            <td>${times[0]}</td>
+                            <td>${times[1]}</td>
+                            <td>1h</td>
+                            <td>9h</td>
+                          </tr>
+                        `;
+                      });
+                    }
+                  });
+                  
+                  hoursTable += '</table>';
+                }
+              }
+
+              return `
+                <div class="note-entry">
+                    <div class="note-title">${note.title}</div>
+                    <div class="note-date">${createdDate}</div>
+                    <div class="note-content">${note.content.replace(/\n/g, '<br>')}</div>
+                    ${hoursTable}
+                    ${note.images && note.images.length > 0 ? 
+                      `<div class="image-notice">📷 This note contains ${note.images.length} image(s)</div>` : 
+                      ''
+                    }
+                </div>
+              `;
+            }).join('')}
+        </div>
+    `).join('')}
     
 </body>
 </html>`;
 
     console.log('HTML content created, length:', htmlContent.length);
     
-    // Generate PDF using Puppeteer
-    console.log('Launching Puppeteer...');
-    let browser;
+    // Generate PDF using Playwright
+    console.log('Launching Playwright browser...');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
     
-    try {
-      console.log('Attempting to launch Puppeteer with bundled Chrome...');
-      
-      // Force use of bundled Chrome by explicitly setting executablePath to null/undefined
-      const launchOptions = {
-        headless: true,
-        executablePath: undefined, // Explicitly undefined to use bundled Chrome
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-gpu',
-          '--disable-dev-tools',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-default-apps',
-          '--disable-hang-monitor',
-          '--disable-prompt-on-repost',
-          '--disable-sync',
-          '--disable-translate',
-          '--disable-ipc-flooding-protection',
-          '--single-process',
-          '--no-zygote',
-          '--disable-accelerated-2d-canvas',
-          '--disable-background-networking'
-        ]
-      };
-      
-      console.log('Launch options:', JSON.stringify(launchOptions, null, 2));
-      browser = await puppeteer.launch(launchOptions);
-      
-      const page = await browser.newPage();
-      await page.setContent(htmlContent, { 
-        waitUntil: 'networkidle0',
-        timeout: 30000 
-      });
-      
-      console.log('Generating PDF...');
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        margin: {
-          top: '20mm',
-          right: '20mm',
-          bottom: '20mm',
-          left: '20mm'
-        },
-        printBackground: true,
-        timeout: 30000
-      });
-      
-      await browser.close();
-      console.log('PDF generated successfully, size:', pdfBuffer.length);
-      
-      return new NextResponse(pdfBuffer, {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${projectTitle}_summary_${new Date().toISOString().split('T')[0]}.pdf"`,
-        },
-      });
-      
-    } catch (puppeteerError) {
-      console.error('Puppeteer error:', puppeteerError);
-      
-      if (browser) {
-        await browser.close().catch(console.error);
-      }
-      
-      // Fallback: return HTML for manual PDF generation
-      console.log('Falling back to HTML response due to Puppeteer error');
-      return new NextResponse(htmlContent, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html',
-          'Content-Disposition': `attachment; filename="${projectTitle}_summary_${new Date().toISOString().split('T')[0]}.html"`,
-        },
-      });
-    }
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, { waitUntil: 'networkidle' });
+    
+    console.log('Generating PDF...');
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      margin: {
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
+      },
+      printBackground: true
+    });
+    
+    await browser.close();
+    console.log('PDF generated successfully, size:', pdfBuffer.length);
+
+    return new NextResponse(pdfBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${projectTitle}_summary_${new Date().toISOString().split('T')[0]}.pdf"`,
+      },
+    });
 
   } catch (error) {
     console.error('Error generating PDF:', error);
