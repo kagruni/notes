@@ -363,12 +363,30 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
     try {
       browser = await puppeteer.launch({
         headless: true,
+        executablePath: process.env.NODE_ENV === 'production' ? '/usr/bin/google-chrome' : undefined,
         args: [
-          '--no-sandbox', 
+          '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
+          '--disable-features=VizDisplayCompositor',
+          '--disable-gpu',
+          '--disable-dev-tools',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-default-apps',
+          '--disable-hang-monitor',
+          '--disable-prompt-on-repost',
+          '--disable-sync',
+          '--disable-translate',
+          '--disable-ipc-flooding-protection',
+          '--single-process',
+          '--no-zygote',
+          '--disable-accelerated-2d-canvas',
+          '--disable-background-networking'
         ]
       });
       
