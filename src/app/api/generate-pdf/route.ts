@@ -365,7 +365,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
       
       // Force use of bundled Chrome by explicitly setting executablePath to null/undefined
       const launchOptions = {
-        headless: 'new' as const,
+        headless: true,
         executablePath: undefined, // Explicitly undefined to use bundled Chrome
         args: [
           '--no-sandbox',
