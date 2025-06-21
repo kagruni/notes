@@ -361,9 +361,12 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
     let browser;
     
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        executablePath: process.env.NODE_ENV === 'production' ? '/usr/bin/google-chrome' : undefined,
+      console.log('Attempting to launch Puppeteer with bundled Chrome...');
+      
+      // Force use of bundled Chrome by explicitly setting executablePath to null/undefined
+      const launchOptions = {
+        headless: 'new' as const,
+        executablePath: undefined, // Explicitly undefined to use bundled Chrome
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -388,7 +391,10 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
           '--disable-accelerated-2d-canvas',
           '--disable-background-networking'
         ]
-      });
+      };
+      
+      console.log('Launch options:', JSON.stringify(launchOptions, null, 2));
+      browser = await puppeteer.launch(launchOptions);
       
       const page = await browser.newPage();
       await page.setContent(htmlContent, { 
