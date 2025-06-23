@@ -25,6 +25,16 @@ export interface NoteImage {
   size: number; // file size in bytes
   storagePath?: string; // Firebase Storage path for deletion
   createdAt: Date;
+  capturedAt?: Date; // When the photo was originally taken (from EXIF)
+  exifData?: {
+    dateTime?: string;
+    dateTimeOriginal?: string;
+    camera?: string;
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+  };
 }
 
 export interface Note {

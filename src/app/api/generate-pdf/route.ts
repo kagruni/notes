@@ -3,40 +3,6 @@ import { Note } from '@/types';
 import { groupNotesByCalendarWeek } from '@/utils/date';
 import { chromium } from 'playwright';
 
-// Function to extract image metadata
-async function getImageMetadata(imageUrl: string): Promise<string | null> {
-  try {
-    const response = await fetch(imageUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    
-    // Look for EXIF data in JPEG files
-    if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
-      // Simple EXIF DateTime extraction for JPEG
-      const str = new TextDecoder('latin1').decode(uint8Array);
-      const datetimeMatch = str.match(/\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}/);
-      if (datetimeMatch) {
-        const [date, time] = datetimeMatch[0].split(' ');
-        const [year, month, day] = date.split(':');
-        const [hour, minute, second] = time.split(':');
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second));
-        return dateObj.toLocaleDateString('de-DE', {
-          day: '2-digit',
-          month: '2-digit', 
-          year: 'numeric'
-        }) + ', ' + dateObj.toLocaleTimeString('de-DE', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-      }
-    }
-    return null;
-  } catch (error) {
-    console.log('Could not extract image metadata:', error);
-    return null;
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     console.log('PDF generation request received');
@@ -67,26 +33,39 @@ export async function POST(request: NextRequest) {
     // Group notes by calendar week and format for OpenAI
     const groupedNotes = groupNotesByCalendarWeek(notesWithDates);
     
-    // Extract image metadata for all images
+    // Extract image metadata from stored data
+    console.log('Processing stored image metadata...');
     const imageMetadataMap = new Map<string, string>();
+    let totalImages = 0;
+    let imagesWithMetadata = 0;
+    
     for (const group of groupedNotes) {
       for (const note of group.notes) {
         if (note.images && note.images.length > 0) {
+          totalImages += note.images.length;
           for (const image of note.images) {
-            if (image.url) {
-              try {
-                const metadata = await getImageMetadata(image.url);
-                if (metadata) {
-                  imageMetadataMap.set(image.url, metadata);
-                }
-              } catch (error) {
-                console.log(`Failed to get metadata for image ${image.name}:`, error);
-              }
+            if (image.capturedAt) {
+              const captureDate = new Date(image.capturedAt);
+              const formattedDate = captureDate.toLocaleDateString('de-DE', {
+                day: '2-digit',
+                month: '2-digit', 
+                year: 'numeric'
+              }) + ', ' + captureDate.toLocaleTimeString('de-DE', {
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+              
+              imageMetadataMap.set(image.url || image.id, formattedDate);
+              imagesWithMetadata++;
+              console.log(`✓ Using stored metadata for ${image.name}: ${formattedDate}`);
+            } else {
+              console.log(`✗ No stored metadata for ${image.name}`);
             }
           }
         }
       }
     }
+    console.log(`Metadata processing complete. ${imagesWithMetadata}/${totalImages} images had stored metadata.`);
     
     const notesContent = groupedNotes.map((group) => {
       let weekContent = `CALENDAR WEEK: ${group.weekLabel}\n\n`;
@@ -111,7 +90,7 @@ export async function POST(request: NextRequest) {
           weekContent += `Images (${note.images.length} total for this note):\n`;
           note.images.forEach((image, index) => {
             if (image.url) {
-              const metadata = imageMetadataMap.get(image.url);
+              const metadata = imageMetadataMap.get(image.url) || imageMetadataMap.get(image.id);
               weekContent += `  - Image ${index + 1}: ${image.name} (URL: ${image.url})`;
               if (metadata) {
                 weekContent += ` - Aufgenommen: ${metadata}`;
@@ -184,12 +163,13 @@ If German notes, use: Arbeiter | Beginn | Ende | Pause | Arbeitsstunden | Bemerk
 
 OTHER FORMATTING:
 - Group images by note - show all images for a note together in a two-column layout (max 300px width, 220px height)
-- For each image, extract and display the capture date/time from metadata if available
+- For each image, ALWAYS include the capture timestamp if provided in the input data
+- Format images like this: <div class="image-item"><img src="URL" alt="name" /><div class="image-date">Aufgenommen: DD.MM.YYYY, HH:MM</div></div>
 - Wrap multiple images in a div with class="image-container" for proper spacing
 - Include creation dates prominently for each note
 - Highlight key milestones and progress points
 - Use the exact calendar week labels provided in the input
-- Display image capture timestamps underneath each image in German format
+- IMPORTANT: When you see "Aufgenommen: [datetime]" in the image data, you MUST include this as a timestamp under each image
 
 Notes organized by calendar week:
 

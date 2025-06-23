@@ -5,6 +5,7 @@ import { Camera, Upload, X, AlertCircle } from 'lucide-react';
 import { NoteImage } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadImageToStorage, compressImageFile, getImageDisplayUrl } from '@/lib/imageStorage';
+import { extractExifFromFile, parseDateTimeToDate } from '@/lib/exifExtractor';
 
 interface ImageUploaderProps {
   images: NoteImage[];
@@ -65,6 +66,38 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     try {
       console.log('📁 Processing file:', file.name, 'type:', file.type, 'size:', file.size);
       
+      // Extract EXIF data from the original file before compression
+      const exifData = await extractExifFromFile(file);
+      let capturedAt: Date | undefined;
+      
+      // Check if this might be from iPhone based on file properties
+      const isLikelyIPhone = file.name.toLowerCase().includes('img_') || 
+                           file.type === 'image/heic' || 
+                           file.type === 'image/heif';
+      
+      if (isLikelyIPhone) {
+        console.log('📱 Detected likely iPhone image upload');
+      }
+      
+      if (exifData) {
+        // Try DateTimeOriginal first (when photo was taken), then DateTime
+        const dateTimeStr = exifData.dateTimeOriginal || exifData.dateTime;
+        if (dateTimeStr) {
+          const parsedDate = parseDateTimeToDate(dateTimeStr);
+          capturedAt = parsedDate || undefined;
+          console.log('📷 Photo was actually taken on:', capturedAt, '(from EXIF metadata)');
+          console.log('📷 Upload happening now at:', new Date(), '(current time)');
+        } else {
+          console.log('📷 EXIF data found but no datetime information');
+        }
+      } else {
+        console.log('📷 No EXIF metadata found in this image');
+        if (isLikelyIPhone) {
+          console.log('📱 iPhone Note: HEIC files may lose EXIF data during browser conversion to JPEG');
+          console.log('📱 Recommendation: Use "Most Compatible" format in iPhone camera settings for better EXIF preservation');
+        }
+      }
+      
       // Compress the image for optimal storage
       const compressedFile = await compressImageFile(file, isMobile ? 1200 : 1600, isMobile ? 0.75 : 0.85);
       console.log('📁 Image compressed from', file.size, 'to', compressedFile.size, 'bytes');
@@ -82,6 +115,8 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         name: file.name,
         size: compressedFile.size,
         createdAt: new Date(),
+        capturedAt,
+        exifData: exifData || undefined,
       };
 
       console.log('📁 Created NoteImage with Firebase Storage:', {
@@ -89,8 +124,17 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         name: noteImage.name,
         type: noteImage.type,
         size: noteImage.size,
-        url: noteImage.url
+        url: noteImage.url,
+        capturedAt: noteImage.capturedAt, // When photo was taken (from EXIF)
+        createdAt: noteImage.createdAt,   // When photo was uploaded (now)
+        hasExifData: !!exifData
       });
+      
+      if (noteImage.capturedAt && noteImage.createdAt) {
+        const timeDiff = noteImage.createdAt.getTime() - noteImage.capturedAt.getTime();
+        const daysDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+        console.log(`📷 This photo was taken ${daysDiff} days ago and is being uploaded now`);
+      }
 
       return noteImage;
     } catch (error) {
@@ -352,10 +396,11 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,image/*"
         multiple
         onChange={handleFileUpload}
         className="hidden"
+        capture="environment" // Use back camera on mobile for better quality
         style={{ fontSize: isMobile ? '16px' : '14px' }}
       />
 
