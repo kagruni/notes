@@ -213,7 +213,7 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${projectTitle} - Project Summary</title>
+    <title>${projectTitle} - Projektzusammenfassung</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -249,28 +249,28 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
         }
         
         .summary-section {
-            background-color: #eff6ff;
-            border: 2px solid #3b82f6;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 30px;
         }
         
         .summary-section h2 {
-            color: #1e40af;
+            color: #374151;
             margin-top: 0;
         }
         
         .week-section {
             margin-bottom: 40px;
             padding: 20px;
-            background-color: #f8fafc;
+            background-color: #ffffff;
             border-radius: 8px;
-            border-left: 4px solid #3b82f6;
+            border: 1px solid #e5e7eb;
         }
         
         .week-title {
-            color: #1e40af;
+            color: #374151;
             font-size: 20px;
             font-weight: bold;
             margin-bottom: 20px;
@@ -336,9 +336,25 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             font-family: monospace;
         }
         
+        .image-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .image-container img {
+            width: 100%;
+            max-width: 300px;
+            height: 220px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        
         .image-notice {
             font-size: 12px;
-            color: #3b82f6;
+            color: #6b7280;
             font-style: italic;
             margin-top: 10px;
         }
@@ -349,92 +365,19 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
     </style>
 </head>
 <body>
-    <h1>${projectTitle} - Project Summary</h1>
+    <h1>${projectTitle} - Projektzusammenfassung</h1>
     
     <div class="meta-info">
-        Generated on: ${new Date().toLocaleDateString('en-US', { 
+        Erstellt am: ${new Date().toLocaleDateString('de-DE', { 
           weekday: 'long', 
           year: 'numeric', 
           month: 'long', 
           day: 'numeric' 
         })}<br>
-        Total notes: ${notes.length}
+        Anzahl Notizen: ${notes.length}
     </div>
     
-    <div class="summary-section">
-        <h2>AI-Generated Summary</h2>
-        <div class="note-content">${summary.replace(/\n/g, '<br>')}</div>
-    </div>
-    
-    ${groupedNotes.map(group => `
-        <div class="week-section">
-            <div class="week-title">${group.weekLabel}</div>
-            
-            ${group.notes.map(note => {
-              const createdDate = new Date(note.createdAt).toLocaleDateString('de-DE', {
-                weekday: 'long',
-                year: 'numeric', 
-                month: 'long',
-                day: 'numeric'
-              });
-
-              // Parse worker hours
-              let hoursTable = '';
-              if (note.content.includes(':') && (note.content.includes('07:00') || note.content.includes('Stunden'))) {
-                const lines = note.content.split('\n');
-                const workerLines = lines.filter(line => 
-                  line.includes(':') && (line.includes('07:00') || line.includes('Besim'))
-                );
-                
-                if (workerLines.length > 0) {
-                  hoursTable = `
-                    <table class="hours-table">
-                      <tr>
-                        <th>Arbeiter</th>
-                        <th>Beginn</th>
-                        <th>Ende</th>
-                        <th>Pause</th>
-                        <th>Stunden</th>
-                      </tr>
-                  `;
-                  
-                  workerLines.forEach(line => {
-                    const workers = line.split(':')[0].split('/').map(w => w.trim());
-                    const times = line.match(/\d{2}:\d{2}/g);
-                    if (times && times.length >= 2) {
-                      workers.forEach(worker => {
-                        hoursTable += `
-                          <tr>
-                            <td>${worker}</td>
-                            <td>${times[0]}</td>
-                            <td>${times[1]}</td>
-                            <td>1h</td>
-                            <td>9h</td>
-                          </tr>
-                        `;
-                      });
-                    }
-                  });
-                  
-                  hoursTable += '</table>';
-                }
-              }
-
-              return `
-                <div class="note-entry">
-                    <div class="note-title">${note.title}</div>
-                    <div class="note-date">${createdDate}</div>
-                    <div class="note-content">${note.content.replace(/\n/g, '<br>')}</div>
-                    ${hoursTable}
-                    ${note.images && note.images.length > 0 ? 
-                      `<div class="image-notice">📷 This note contains ${note.images.length} image(s)</div>` : 
-                      ''
-                    }
-                </div>
-              `;
-            }).join('')}
-        </div>
-    `).join('')}
+    ${summary}
     
 </body>
 </html>`;
