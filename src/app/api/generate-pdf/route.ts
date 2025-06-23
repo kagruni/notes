@@ -3,6 +3,40 @@ import { Note } from '@/types';
 import { groupNotesByCalendarWeek } from '@/utils/date';
 import { chromium } from 'playwright';
 
+// Function to extract image metadata
+async function getImageMetadata(imageUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(imageUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Look for EXIF data in JPEG files
+    if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
+      // Simple EXIF DateTime extraction for JPEG
+      const str = new TextDecoder('latin1').decode(uint8Array);
+      const datetimeMatch = str.match(/\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}/);
+      if (datetimeMatch) {
+        const [date, time] = datetimeMatch[0].split(' ');
+        const [year, month, day] = date.split(':');
+        const [hour, minute, second] = time.split(':');
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second));
+        return dateObj.toLocaleDateString('de-DE', {
+          day: '2-digit',
+          month: '2-digit', 
+          year: 'numeric'
+        }) + ', ' + dateObj.toLocaleTimeString('de-DE', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    }
+    return null;
+  } catch (error) {
+    console.log('Could not extract image metadata:', error);
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log('PDF generation request received');
@@ -33,6 +67,27 @@ export async function POST(request: NextRequest) {
     // Group notes by calendar week and format for OpenAI
     const groupedNotes = groupNotesByCalendarWeek(notesWithDates);
     
+    // Extract image metadata for all images
+    const imageMetadataMap = new Map<string, string>();
+    for (const group of groupedNotes) {
+      for (const note of group.notes) {
+        if (note.images && note.images.length > 0) {
+          for (const image of note.images) {
+            if (image.url) {
+              try {
+                const metadata = await getImageMetadata(image.url);
+                if (metadata) {
+                  imageMetadataMap.set(image.url, metadata);
+                }
+              } catch (error) {
+                console.log(`Failed to get metadata for image ${image.name}:`, error);
+              }
+            }
+          }
+        }
+      }
+    }
+    
     const notesContent = groupedNotes.map((group) => {
       let weekContent = `CALENDAR WEEK: ${group.weekLabel}\n\n`;
       
@@ -56,7 +111,12 @@ export async function POST(request: NextRequest) {
           weekContent += `Images (${note.images.length} total for this note):\n`;
           note.images.forEach((image, index) => {
             if (image.url) {
-              weekContent += `  - Image ${index + 1}: ${image.name} (URL: ${image.url})\n`;
+              const metadata = imageMetadataMap.get(image.url);
+              weekContent += `  - Image ${index + 1}: ${image.name} (URL: ${image.url})`;
+              if (metadata) {
+                weekContent += ` - Aufgenommen: ${metadata}`;
+              }
+              weekContent += `\n`;
             } else if (image.data) {
               weekContent += `  - Image ${index + 1}: ${image.name} (base64 data available)\n`;
             }
@@ -95,7 +155,7 @@ CONTENT STRUCTURE:
    - For each note in that week:
      - Note title and creation date
      - Note content summary
-     - All images for that note grouped together
+     - All images for that note grouped together with their capture timestamps
      - Worker hours table if present
 3. Maintain chronological order within each week
 
@@ -124,10 +184,12 @@ If German notes, use: Arbeiter | Beginn | Ende | Pause | Arbeitsstunden | Bemerk
 
 OTHER FORMATTING:
 - Group images by note - show all images for a note together in a two-column layout (max 300px width, 220px height)
+- For each image, extract and display the capture date/time from metadata if available
 - Wrap multiple images in a div with class="image-container" for proper spacing
 - Include creation dates prominently for each note
 - Highlight key milestones and progress points
 - Use the exact calendar week labels provided in the input
+- Display image capture timestamps underneath each image in German format
 
 Notes organized by calendar week:
 
@@ -263,10 +325,6 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
         
         .week-section {
             margin-bottom: 40px;
-            padding: 20px;
-            background-color: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
         }
         
         .week-title {
@@ -274,6 +332,8 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             font-size: 20px;
             font-weight: bold;
             margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e7eb;
         }
         
         .note-entry {
@@ -343,6 +403,12 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             margin: 15px 0;
         }
         
+        .image-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
         .image-container img {
             width: 100%;
             max-width: 300px;
@@ -350,6 +416,13 @@ Please return only the HTML content without <!DOCTYPE>, <html>, <head>, or <body
             object-fit: cover;
             border-radius: 6px;
             border: 1px solid #e5e7eb;
+        }
+        
+        .image-date {
+            font-size: 10px;
+            color: #6b7280;
+            margin-top: 5px;
+            text-align: center;
         }
         
         .image-notice {
