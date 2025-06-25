@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { Project, Note, NoteImage } from '@/types';
 import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square } from 'lucide-react';
+import toast from 'react-hot-toast';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
 import { groupNotesByCalendarWeek } from '@/utils/date';
@@ -22,7 +23,6 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const filteredNotes = notes.filter(note =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -99,21 +99,22 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const handleGeneratePDF = async () => {
     if (selectedNotes.size === 0) return;
     
-    setIsGeneratingPDF(true);
-    try {
-      const selectedNotesData = notes.filter(note => selectedNotes.has(note.id));
-      
-      const response = await fetch('/api/generate-pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          notes: selectedNotesData,
-          projectTitle: project.title,
-        }),
-      });
-
+    // Clear selection and exit selection mode immediately
+    const selectedNotesData = notes.filter(note => selectedNotes.has(note.id));
+    setSelectedNotes(new Set());
+    setIsSelectionMode(false);
+    
+    // Create promise for toast
+    const pdfPromise = fetch('/api/generate-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        notes: selectedNotesData,
+        projectTitle: project.title,
+      }),
+    }).then(async (response) => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('PDF generation failed:', {
@@ -134,15 +135,29 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      setSelectedNotes(new Set());
-      setIsSelectionMode(false);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`Failed to generate PDF summary: ${errorMessage}`);
-    } finally {
-      setIsGeneratingPDF(false);
-    }
+      return `PDF generated successfully for ${selectedNotesData.length} notes`;
+    });
+
+    // Show toast with promise
+    toast.promise(
+      pdfPromise,
+      {
+        loading: 'Generating PDF summary...',
+        success: (message) => message,
+        error: (err) => err.message || 'Failed to generate PDF summary',
+      },
+      {
+        loading: {
+          duration: Infinity,
+        },
+        success: {
+          duration: 3000,
+        },
+        error: {
+          duration: 5000,
+        },
+      }
+    );
   };
 
   return (
@@ -185,11 +200,10 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
           {isSelectionMode && selectedNotes.size > 0 && (
             <button
               onClick={handleGeneratePDF}
-              disabled={isGeneratingPDF}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
             >
               <FileText className="w-4 h-4" />
-              <span>{isGeneratingPDF ? 'Generating...' : `Generate PDF (${selectedNotes.size})`}</span>
+              <span>Generate PDF ({selectedNotes.size})</span>
             </button>
           )}
           
