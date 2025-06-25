@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Camera, Upload, X, AlertCircle } from 'lucide-react';
+import { Upload, X, AlertCircle } from 'lucide-react';
 import { NoteImage } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadImageToStorage, compressImageFile, getImageDisplayUrl } from '@/lib/imageStorage';
@@ -17,42 +17,15 @@ interface ImageUploaderProps {
 
 export default function ImageUploader({ images, onImagesChange, onImageClick, disabled = false, projectId }: ImageUploaderProps) {
   const { user } = useAuth();
-  const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [cameraSupported, setCameraSupported] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Check if we're on mobile
   const isMobile = typeof window !== 'undefined' && 
     (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
      'ontouchstart' in window);
 
-  // Check if camera is supported
-  const checkCameraSupport = useCallback(() => {
-    if (typeof window === 'undefined') return false;
-    
-    // Check if we're on HTTPS or localhost
-    const isSecureContext = window.location.protocol === 'https:' || 
-                          window.location.hostname === 'localhost' ||
-                          window.location.hostname === '127.0.0.1';
-    
-    if (!isSecureContext) {
-      setCameraSupported(false);
-      return false;
-    }
-    
-    // Check if mediaDevices API is available
-    const hasMediaDevices = navigator && 
-                           navigator.mediaDevices && 
-                           typeof navigator.mediaDevices.getUserMedia === 'function';
-    
-    setCameraSupported(hasMediaDevices);
-    return hasMediaDevices;
-  }, []);
 
   const generateImageId = () => {
     return `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -196,129 +169,13 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
     }
   }, [images, onImagesChange, processImageFile, user, projectId]);
 
-  const startCamera = useCallback(async () => {
-    try {
-      setError(null);
-      
-      // Check camera support first
-      if (!checkCameraSupport()) {
-        const isSecureContext = typeof window !== 'undefined' && 
-                               (window.location.protocol === 'https:' || 
-                                window.location.hostname === 'localhost' ||
-                                window.location.hostname === '127.0.0.1');
-        
-        if (!isSecureContext) {
-          setError('Camera requires HTTPS. Please access the app via HTTPS or localhost for camera functionality.');
-        } else {
-          setError('Camera is not supported on this device or browser.');
-        }
-        return;
-      }
 
-      setIsCapturing(true);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: isMobile ? 'environment' : 'user', // Back camera on mobile
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
-
-      streamRef.current = stream;
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    } catch (err) {
-      console.error('Error starting camera:', err);
-      
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError('Camera permission denied. Please allow camera access and try again.');
-        } else if (err.name === 'NotFoundError') {
-          setError('No camera found on this device.');
-        } else if (err.name === 'NotSupportedError') {
-          setError('Camera is not supported on this device.');
-        } else {
-          setError(`Camera error: ${err.message}`);
-        }
-      } else {
-        setError('Camera access failed. Please ensure you are using HTTPS and have granted camera permissions.');
-      }
-      
-      setIsCapturing(false);
-    }
-  }, [isMobile, checkCameraSupport]);
-
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsCapturing(false);
-  }, []);
-
-  const capturePhoto = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || !user || !projectId) return;
-
-    console.log('📸 Camera capture started');
-    setProcessing(true);
-    
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-
-      if (context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        console.log('📸 Canvas size set:', canvas.width, 'x', canvas.height);
-
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Convert canvas to blob
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) resolve(blob);
-              else reject(new Error('Failed to create blob from canvas'));
-            },
-            'image/jpeg',
-            isMobile ? 0.75 : 0.85
-          );
-        });
-
-        // Create file from blob
-        const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        
-        // Process the captured image
-        const noteImage = await processImageFile(file);
-
-        console.log('📸 Adding camera image to state');
-        onImagesChange([...images, noteImage]);
-        setIsCapturing(false);
-        stopCamera();
-      }
-    } catch (error) {
-      console.error('📸 Error capturing photo:', error);
-      setError(error instanceof Error ? error.message : 'Failed to capture photo');
-    } finally {
-      setProcessing(false);
-    }
-  }, [images, onImagesChange, stopCamera, processImageFile, user, projectId, isMobile]);
 
   const removeImage = useCallback((imageId: string) => {
     onImagesChange(images.filter(img => img.id !== imageId));
   }, [images, onImagesChange]);
 
-  // Initialize camera support check
-  useState(() => {
-    if (typeof window !== 'undefined') {
-      checkCameraSupport();
-    }
-  });
 
   // Show warning if project ID is missing
   if (!projectId && !disabled) {
@@ -339,22 +196,6 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         
         {!disabled && (
           <div className="flex space-x-2">
-            {cameraSupported && (
-              <button
-                type="button"
-                onClick={isCapturing ? stopCamera : startCamera}
-                disabled={processing}
-                className="flex items-center space-x-2 px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md text-sm transition-colors"
-                style={{ 
-                  WebkitTapHighlightColor: 'transparent',
-                  touchAction: 'manipulation'
-                }}
-              >
-                <Camera className="w-4 h-4" />
-                <span>{isCapturing ? 'Cancel' : 'Camera'}</span>
-              </button>
-            )}
-            
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -381,16 +222,6 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         </div>
       )}
 
-      {/* HTTPS warning for mobile */}
-      {isMobile && cameraSupported === false && (
-        <div className="p-3 bg-amber-100 dark:bg-amber-900/20 border border-amber-400 text-amber-700 dark:text-amber-400 rounded text-sm flex items-start space-x-2">
-          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <div>
-            <strong>Camera requires HTTPS:</strong> To use the camera feature on mobile devices, you need to access the app via HTTPS. 
-            For development, you can use tools like ngrok or deploy to a staging environment with HTTPS.
-          </div>
-        </div>
-      )}
 
       {/* Hidden file input with mobile optimizations */}
       <input
@@ -400,38 +231,9 @@ export default function ImageUploader({ images, onImagesChange, onImageClick, di
         multiple
         onChange={handleFileUpload}
         className="hidden"
-        capture="environment" // Use back camera on mobile for better quality
         style={{ fontSize: isMobile ? '16px' : '14px' }}
       />
 
-      {/* Camera view */}
-      {isCapturing && (
-        <div className="relative bg-black rounded-lg overflow-hidden">
-          <video
-            ref={videoRef}
-            className="w-full max-h-64 object-cover"
-            playsInline
-            muted
-          />
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-            <button
-              type="button"
-              onClick={capturePhoto}
-              disabled={processing}
-              className="w-16 h-16 bg-white rounded-full border-4 border-gray-300 hover:border-gray-400 transition-colors disabled:opacity-50"
-              style={{ 
-                WebkitTapHighlightColor: 'transparent',
-                touchAction: 'manipulation'
-              }}
-            >
-              <div className="w-full h-full bg-gray-200 rounded-full"></div>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Hidden canvas for photo capture */}
-      <canvas ref={canvasRef} className="hidden" />
 
       {/* Error display */}
       {error && (
