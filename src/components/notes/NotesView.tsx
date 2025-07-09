@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { Project, Note, NoteImage } from '@/types';
-import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
@@ -160,6 +160,70 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     );
   };
 
+  const handleGenerateHoursPDF = async () => {
+    if (selectedNotes.size === 0) return;
+    
+    // Clear selection and exit selection mode immediately
+    const selectedNotesData = notes.filter(note => selectedNotes.has(note.id));
+    setSelectedNotes(new Set());
+    setIsSelectionMode(false);
+    
+    // Create promise for toast
+    const pdfPromise = fetch('/api/generate-hours-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        notes: selectedNotesData,
+        projectTitle: project.title,
+      }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Hours PDF generation failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`Failed to generate hours PDF: ${response.status} - ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.title}_arbeitsstunden_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      return `Worker hours PDF generated successfully`;
+    });
+
+    // Show toast with promise
+    toast.promise(
+      pdfPromise,
+      {
+        loading: 'Generating worker hours PDF...',
+        success: (message) => message,
+        error: (err) => err.message || 'Failed to generate worker hours PDF',
+      },
+      {
+        loading: {
+          duration: Infinity,
+        },
+        success: {
+          duration: 3000,
+        },
+        error: {
+          duration: 5000,
+        },
+      }
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -198,13 +262,23 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
           </button>
           
           {isSelectionMode && selectedNotes.size > 0 && (
-            <button
-              onClick={handleGeneratePDF}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Generate PDF ({selectedNotes.size})</span>
-            </button>
+            <>
+              <button
+                onClick={handleGeneratePDF}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Generate PDF ({selectedNotes.size})</span>
+              </button>
+              
+              <button
+                onClick={handleGenerateHoursPDF}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+              >
+                <Clock className="w-4 h-4" />
+                <span>Hours PDF ({selectedNotes.size})</span>
+              </button>
+            </>
           )}
           
           <button
