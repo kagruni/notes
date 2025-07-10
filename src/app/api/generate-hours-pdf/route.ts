@@ -27,102 +27,98 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(note.updatedAt)
     })).sort((a: Note, b: Note) => a.createdAt.getTime() - b.createdAt.getTime());
     
-    // Prepare notes content for OpenAI
-    const notesContent = notesWithDates.map((note) => {
-      const createdDate = new Date(note.createdAt).toLocaleDateString('de-DE', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
+    // Extract full note content for each day to preserve ALL worker information
+    const notesForAI: string[] = [];
+    
+    notesWithDates.forEach((note) => {
+      const date = new Date(note.createdAt);
+      const day = date.getDate();
+      const month = date.getMonth() + 1;
       
-      return `Date: ${createdDate}\nContent: ${note.content}\n---`;
-    }).join('\n\n');
+      // Include the full note content so AI can see everything
+      notesForAI.push(`=== Day ${day} (${date.toLocaleDateString('de-DE')}) ===\n${note.content}\n`);
+    });
+    
+    // If no notes found, return early
+    if (notesForAI.length === 0) {
+      return NextResponse.json({ error: 'No notes found' }, { status: 400 });
+    }
+    
+    console.log(`Processing ${notesForAI.length} days of notes`);
+    const notesContent = notesForAI.join('\n');
 
-    // Create OpenAI prompt specifically for hours extraction
-    const prompt = `Extract all worker hours from the following notes and create a MATRIX/GRID style HTML table.
+    // Create simplified prompt
+    const prompt = `Analyze these daily construction notes and create a worker hours table:
 
-CRITICAL REQUIREMENTS:
-1. Create a MATRIX table with:
-   - Worker names in the LEFTMOST column (one row per worker)
-   - Days of the month as COLUMN HEADERS across the top
-   - Work hours in the cells where worker and date intersect
-2. Format: Show hours as "HH:MM-HH:MM (Xh)" where X is total hours worked
-3. Empty cells for days where a worker didn't work
-4. Sort workers alphabetically, dates chronologically
-5. Language: Use the same language as the input notes
-
-TABLE STRUCTURE EXAMPLE:
-<table class="hours-table">
-<thead>
-<tr>
-  <th>Arbeiter</th>
-  <th>Mo. 15.01</th>
-  <th>Di. 16.01</th>
-  <th>Mi. 17.01</th>
-  <th>Do. 18.01</th>
-  <th>Fr. 19.01</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><strong>Besim</strong></td>
-  <td>07:00-17:00 (9h)</td>
-  <td>07:00-16:00 (8h)</td>
-  <td></td>
-  <td>07:00-17:00 (9h)</td>
-  <td></td>
-</tr>
-<tr>
-  <td><strong>Ion</strong></td>
-  <td>07:00-17:00 (9h)</td>
-  <td></td>
-  <td>08:00-17:00 (8h)</td>
-  <td>07:00-17:00 (9h)</td>
-  <td>07:00-15:00 (7h)</td>
-</tr>
-</tbody>
-</table>
-
-ADDITIONAL ROWS TO ADD AFTER ALL WORKERS:
-- Add a summary row showing total hours per day
-- Add a row showing total hours per worker
-
-HTML FORMAT:
-- Return ONLY the HTML table
-- Use class="hours-table" for styling
-- Bold worker names
-- Use abbreviated day names (Mo., Di., Mi., etc. for German)
-- Calculate hours: End - Start - 1h break (unless specified otherwise)
-
-Notes content:
 ${notesContent}
 
-IMPORTANT: Create a MATRIX view where you can see all workers and all days at a glance. Each worker gets ONE row, each day gets ONE column.`;
+CRITICAL PARSING INSTRUCTIONS:
+1. Extract EVERY worker name mentioned in the notes
+2. Common patterns to look for:
+   - "Name1/Name2/Name3: 07:00-17:00" = ALL these workers worked 07:00-17:00
+   - "Name1, Name2, Name3: 7-17" = ALL these workers worked 7-17
+   - "Arbeiter: Name1, Name2..." = list of workers
+   - Individual mentions like "Name bis 16:00" = that person left at 16:00
+3. Calculate hours: 
+   - 07:00-17:00 = 10 hours - 1 hour break = 9 hours
+   - 07:00-16:00 = 9 hours - 1 hour break = 8 hours
+   - 07:00-12:00 = 5 hours (no break for half day) = 5 hours
+
+IMPORTANT RULES:
+- When multiple names appear before a time (separated by /, comma, or "und"), they ALL worked those hours
+- Look for ALL worker names in the entire note, not just obvious patterns
+- Include workers even if they're mentioned in sentences like "Today Name1 and Name2 worked..."
+
+TABLE FORMAT:
+- Rows: Each unique worker name (alphabetically sorted)
+- Columns: Days 1-31
+- Cells: Number of hours worked (e.g., "9", "8", "5")
+- Use "-" for days not worked
+- Right column "Gesamt": total hours per worker
+- Bottom row: daily totals
+
+Return ONLY the <table class="hours-table">...</table> HTML.`;
 
     console.log('Calling OpenAI API for hours extraction');
     
-    // Call OpenAI API
-    const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openAIApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'o3-2025-04-16',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a specialist in extracting worker hours from construction notes. Extract ALL worker hours and create a single consolidated HTML table. Each row should show: Date, Worker Name, Start Time, End Time, Break Time, Total Hours Worked. Calculate hours as: End - Start - Break. Sort by date then by worker name. Use the same language as the input notes.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
+    // Call OpenAI API with longer timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+    
+    let openAIResponse;
+    try {
+      openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openAIApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1-2025-04-14', // Using gpt-4.1 model
+          messages: [
+            {
+              role: 'system',
+              content: 'You are parsing construction worker hours. CRITICAL: When multiple workers share one time entry (e.g., "A/B/C: 7-17"), ALL listed workers worked those hours. Watch for exceptions like "bis 16:00" (until 4pm) or "ab 8:00" (from 8am). Show ONLY hour numbers in cells. Calculate: 7-17 = 9h (with 1h break). Return only HTML table.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0, // Zero temperature for deterministic output
+          max_tokens: 2000, // Using max_tokens for this model
+        }),
+        signal: controller.signal,
+      });
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error('OpenAI API request timed out after 3 minutes');
+        throw new Error('Request timed out - try selecting fewer notes');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!openAIResponse.ok) {
       const errorText = await openAIResponse.text();
@@ -144,84 +140,151 @@ IMPORTANT: Create a MATRIX view where you can see all workers and all days at a 
     <style>
         @page {
             size: A4 landscape;
-            margin: 15mm;
+            margin: 10mm;
         }
         
         body {
             font-family: 'Arial', sans-serif;
-            line-height: 1.4;
-            color: #333;
+            line-height: 1.2;
+            color: #000;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
+            font-size: 11px;
         }
         
         h1 {
-            color: #2563eb;
-            font-size: 24px;
-            margin-bottom: 10px;
+            font-size: 18px;
+            margin-bottom: 5px;
             text-align: center;
+            color: #000;
         }
         
         .subtitle {
             text-align: center;
-            color: #6b7280;
-            font-size: 14px;
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .week-section {
             margin-bottom: 20px;
+            page-break-inside: avoid;
+        }
+        
+        .week-section h3 {
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #000;
+            background-color: #e5e7eb;
+            padding: 5px 10px;
+            border-radius: 3px;
         }
         
         .hours-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 0 auto;
             background-color: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-        
-        .hours-table thead {
-            background-color: #f3f4f6;
+            border: 2px solid #000;
         }
         
         .hours-table th,
         .hours-table td {
-            border: 1px solid #e5e7eb;
-            padding: 8px 12px;
-            text-align: left;
+            border: 1px solid #666;
+            padding: 4px 6px;
+            text-align: center;
         }
         
         .hours-table th {
             font-weight: bold;
-            color: #374151;
+            background-color: #e5e7eb;
+            font-size: 10px;
+        }
+        
+        .worker-col {
+            width: 120px;
+            text-align: left !important;
+        }
+        
+        .day-col {
+            width: 35px;
+            font-size: 9px;
+        }
+        
+        .total-col {
+            width: 70px;
             background-color: #f3f4f6;
+            font-weight: bold;
         }
         
-        .hours-table tbody tr:nth-child(even) {
-            background-color: #f9fafb;
+        .worker-name {
+            text-align: left !important;
+            font-weight: bold;
         }
         
-        .hours-table tbody tr:hover {
+        .hours {
+            font-size: 9px;
+            font-weight: normal;
+            padding: 1px;
+            white-space: nowrap;
+        }
+        
+        .total {
             background-color: #f3f4f6;
+            font-weight: bold;
+            font-size: 12px;
         }
         
-        .hours-table td:nth-child(3),
-        .hours-table td:nth-child(4),
-        .hours-table td:nth-child(5),
-        .hours-table td:nth-child(6) {
+        .totals-row {
+            background-color: #e5e7eb !important;
+        }
+        
+        .totals-row td {
+            border-top: 2px solid #000;
+        }
+        
+        .summary-section {
+            margin-top: 30px;
+            page-break-before: always;
+        }
+        
+        .summary-section h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .summary-table {
+            width: 60%;
+            margin: 0 auto;
+            border-collapse: collapse;
+            border: 2px solid #000;
+        }
+        
+        .summary-table th,
+        .summary-table td {
+            border: 1px solid #666;
+            padding: 8px 12px;
             text-align: center;
-            font-family: monospace;
-            font-size: 14px;
+        }
+        
+        .summary-table th {
+            background-color: #e5e7eb;
+            font-weight: bold;
         }
         
         .footer {
-            margin-top: 30px;
+            margin-top: 20px;
             text-align: center;
-            font-size: 12px;
-            color: #6b7280;
+            font-size: 10px;
+            color: #666;
         }
         
         @media print {
             body { 
                 print-color-adjust: exact;
                 -webkit-print-color-adjust: exact;
+            }
+            .week-section {
+                page-break-inside: avoid;
             }
         }
     </style>
