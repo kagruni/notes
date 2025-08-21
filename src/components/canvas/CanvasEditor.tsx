@@ -234,9 +234,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     onClose();
   }, [hasChanges, handleAutoSave, onClose]);
 
-  // Hide "Excalidraw links" heading using JavaScript
+  // Hide "Excalidraw links" heading and extra dividers using JavaScript
   useEffect(() => {
-    const hideExcalidrawLinksHeading = () => {
+    const hideExcalidrawLinksAndDividers = () => {
       // Look for any element containing "Excalidraw links" text
       const walker = document.createTreeWalker(
         document.body,
@@ -262,15 +262,49 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           }
         }
       }
+
+      // Remove extra dividers/separators - more aggressive approach
+      const allElements = document.querySelectorAll('*');
+      const dividers = [];
+      
+      allElements.forEach(el => {
+        // Look for elements that look like dividers
+        const className = el.className || '';
+        if (el.tagName === 'HR' || 
+            (typeof className === 'string' && (className.includes('separator') || className.includes('divider'))) ||
+            (el.offsetHeight < 5 && el.offsetWidth > 100 && 
+             (el.style.backgroundColor || el.style.borderTop || el.style.borderBottom))) {
+          dividers.push(el);
+        }
+      });
+      
+      // Hide all but the first divider in the menu
+      if (dividers.length > 1) {
+        dividers.slice(1).forEach(divider => {
+          divider.style.display = 'none';
+        });
+      }
+      
+      // Also try to find menu-specific dividers
+      const menuContent = document.querySelector('.Island__content, .MenuTrigger__content');
+      if (menuContent) {
+        const menuDividers = menuContent.querySelectorAll('hr, [style*="border"], [style*="background"]');
+        if (menuDividers.length > 1) {
+          // Keep only the first divider
+          for (let i = 1; i < menuDividers.length; i++) {
+            menuDividers[i].style.display = 'none';
+          }
+        }
+      }
     };
 
     if (isOpen && mounted) {
       // Run immediately and after a short delay to catch dynamically added content
-      hideExcalidrawLinksHeading();
-      const timer = setTimeout(hideExcalidrawLinksHeading, 500);
+      hideExcalidrawLinksAndDividers();
+      const timer = setTimeout(hideExcalidrawLinksAndDividers, 500);
       
       // Also set up a mutation observer to catch future changes
-      const observer = new MutationObserver(hideExcalidrawLinksHeading);
+      const observer = new MutationObserver(hideExcalidrawLinksAndDividers);
       observer.observe(document.body, { 
         childList: true, 
         subtree: true 
