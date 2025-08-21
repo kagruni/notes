@@ -234,6 +234,55 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     onClose();
   }, [hasChanges, handleAutoSave, onClose]);
 
+  // Hide "Excalidraw links" heading using JavaScript
+  useEffect(() => {
+    const hideExcalidrawLinksHeading = () => {
+      // Look for any element containing "Excalidraw links" text
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.textContent?.includes('Excalidraw links')) {
+          // Hide the parent element
+          let parent = node.parentElement;
+          while (parent && parent !== document.body) {
+            if (parent.tagName === 'H1' || parent.tagName === 'H2' || 
+                parent.tagName === 'H3' || parent.tagName === 'H4' || 
+                parent.tagName === 'H5' || parent.tagName === 'H6' ||
+                parent.textContent?.trim() === 'Excalidraw links') {
+              parent.style.display = 'none';
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+      }
+    };
+
+    if (isOpen && mounted) {
+      // Run immediately and after a short delay to catch dynamically added content
+      hideExcalidrawLinksHeading();
+      const timer = setTimeout(hideExcalidrawLinksHeading, 500);
+      
+      // Also set up a mutation observer to catch future changes
+      const observer = new MutationObserver(hideExcalidrawLinksHeading);
+      observer.observe(document.body, { 
+        childList: true, 
+        subtree: true 
+      });
+
+      return () => {
+        clearTimeout(timer);
+        observer.disconnect();
+      };
+    }
+  }, [isOpen, mounted]);
+
   if (!isOpen || !canvas || !mounted) return null;
 
   // Render in a portal to escape all parent styles
@@ -258,6 +307,32 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         }}
         className="excalidraw-wrapper"
       >
+        {/* Hide social links with CSS */}
+        <style>{`
+          [data-testid="socials"] {
+            display: none !important;
+          }
+          .Menu__socials {
+            display: none !important;
+          }
+          a[href*="github.com"],
+          a[href*="twitter.com"], 
+          a[href*="x.com"],
+          a[href*="discord.gg"] {
+            display: none !important;
+          }
+          /* Hide the extra divider that was before the social links section */
+          .Menu__separator:last-of-type {
+            display: none !important;
+          }
+          /* Alternative approach - hide empty separator elements */
+          hr:empty {
+            display: none !important;
+          }
+          .MenuTrigger__content > div > hr:nth-last-child(2) {
+            display: none !important;
+          }
+        `}</style>
         <ExcalidrawComponent
           initialData={initialData}
           theme={theme}
@@ -283,29 +358,16 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           name={title}
           UIOptions={{
             canvasActions: {
+              loadScene: true,
+              saveToActiveFile: true,
+              saveAsImage: true,
+              clearCanvas: true,
               toggleTheme: true,
-            }
-          }}
-          MainMenu={{
-            DefaultItems: {
-              LoadScene: true,
-              SaveToActiveFile: true,
-              SaveAsImage: true,
-              Help: true,
-              ClearCanvas: true,
-            },
-            CustomItems: [
-              {
-                name: 'toggleTheme',
-                text: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
-                icon: theme === 'dark' ? '☀️' : '🌙',
-                order: 2,
-                action: () => {
-                  console.log('Theme toggle clicked, current theme:', theme);
-                  toggleTheme();
-                }
+              changeViewBackgroundColor: true,
+              export: {
+                saveFileToDisk: true,
               }
-            ]
+            }
           }}
         />
       </div>
