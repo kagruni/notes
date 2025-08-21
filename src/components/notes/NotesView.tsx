@@ -2,11 +2,14 @@
 
 import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
-import { Project, Note, NoteImage } from '@/types';
-import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock } from 'lucide-react';
+import { useCanvases } from '@/hooks/useCanvases';
+import { Project, Note, NoteImage, Canvas } from '@/types';
+import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock, PenTool } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
+import CanvasCard from '@/components/canvas/CanvasCard';
+import CanvasEditor from '@/components/canvas/CanvasEditor';
 import { groupNotesByCalendarWeek } from '@/utils/date';
 
 interface NotesViewProps {
@@ -15,7 +18,8 @@ interface NotesViewProps {
 }
 
 export default function NotesView({ project, onBack }: NotesViewProps) {
-  const { notes, loading, error, createNote, updateNote, deleteNote } = useNotes(project.id);
+  const { notes, loading: notesLoading, error: notesError, createNote, updateNote, deleteNote } = useNotes(project.id);
+  const { canvases, loading: canvasesLoading, error: canvasesError, createCanvas, updateCanvas, deleteCanvas } = useCanvases(project.id);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
@@ -23,6 +27,9 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [contentType, setContentType] = useState<'notes' | 'canvases'>('notes');
+  const [showCanvasEditor, setShowCanvasEditor] = useState(false);
+  const [editingCanvas, setEditingCanvas] = useState<Canvas | null>(null);
 
   const filteredNotes = notes.filter(note =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -77,6 +84,58 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const handleCreateNote = () => {
     setModalMode('create');
     setShowNoteModal(true);
+  };
+
+  const handleCreateCanvas = async () => {
+    try {
+      const canvasId = await createCanvas('Untitled Canvas', project.id);
+      const newCanvas: Canvas = {
+        id: canvasId,
+        title: 'Untitled Canvas',
+        elements: [],
+        appState: {},
+        files: {},
+        projectId: project.id,
+        userId: '', // Will be filled by Firebase
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      setEditingCanvas(newCanvas);
+      setShowCanvasEditor(true);
+    } catch (error) {
+      console.error('Failed to create canvas:', error);
+      toast.error('Failed to create canvas');
+    }
+  };
+
+  const handleOpenCanvas = (canvas: Canvas) => {
+    setEditingCanvas(canvas);
+    setShowCanvasEditor(true);
+  };
+
+  const handleUpdateCanvas = async (canvasId: string, updates: Partial<Canvas>) => {
+    try {
+      await updateCanvas(canvasId, updates);
+      toast.success('Canvas saved');
+    } catch (error) {
+      console.error('Failed to update canvas:', error);
+      toast.error('Failed to save canvas');
+    }
+  };
+
+  const handleDeleteCanvas = async (canvasId: string) => {
+    try {
+      await deleteCanvas(canvasId);
+      toast.success('Canvas deleted');
+    } catch (error) {
+      console.error('Failed to delete canvas:', error);
+      toast.error('Failed to delete canvas');
+    }
+  };
+
+  const handleCloseCanvas = () => {
+    setShowCanvasEditor(false);
+    setEditingCanvas(null);
   };
 
   const toggleNoteSelection = (noteId: string) => {
@@ -249,73 +308,129 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         </div>
         
         <div className="flex items-center space-x-2">
-          <button
-            onClick={toggleSelectionMode}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm ${
-              isSelectionMode
-                ? 'bg-gray-600 hover:bg-gray-700 text-white'
-                : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-700 text-gray-800 dark:text-white'
-            }`}
-          >
-            {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-            <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
-          </button>
-          
-          {isSelectionMode && selectedNotes.size > 0 && (
+          {/* Only show selection mode for notes */}
+          {contentType === 'notes' && (
             <>
               <button
-                onClick={handleGeneratePDF}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+                onClick={toggleSelectionMode}
+                className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm ${
+                  isSelectionMode
+                    ? 'bg-gray-600 hover:bg-gray-700 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-700 text-gray-800 dark:text-white'
+                }`}
               >
-                <FileText className="w-4 h-4" />
-                <span>Generate PDF ({selectedNotes.size})</span>
+                {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
               </button>
               
-              <button
-                onClick={handleGenerateHoursPDF}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
-              >
-                <Clock className="w-4 h-4" />
-                <span>Hours PDF ({selectedNotes.size})</span>
-              </button>
+              {isSelectionMode && selectedNotes.size > 0 && (
+                <>
+                  <button
+                    onClick={handleGeneratePDF}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Generate PDF ({selectedNotes.size})</span>
+                  </button>
+                  
+                  <button
+                    onClick={handleGenerateHoursPDF}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Hours PDF ({selectedNotes.size})</span>
+                  </button>
+                </>
+              )}
             </>
           )}
           
+          {/* Create buttons based on content type */}
+          {contentType === 'notes' ? (
+            <button
+              onClick={handleCreateNote}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Note</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleCreateCanvas}
+              className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Canvas</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Content Type Tabs */}
+      <div className="mb-6">
+        <div className="flex space-x-1 mb-4">
           <button
-            onClick={handleCreateNote}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+            onClick={() => setContentType('notes')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              contentType === 'notes'
+                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            <span>New Note</span>
+            <StickyNote className="w-4 h-4" />
+            <span>Notes</span>
+            {notes.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                {notes.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setContentType('canvases')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              contentType === 'canvases'
+                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            <PenTool className="w-4 h-4" />
+            <span>Canvases</span>
+            {canvases.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">
+                {canvases.length}
+              </span>
+            )}
           </button>
         </div>
+
+        {/* Search (only for notes) */}
+        {contentType === 'notes' && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search notes..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search notes..."
-            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-          />
-        </div>
-      </div>
-
-      {/* Notes Grid */}
+      {/* Content Grid */}
       <div>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-gray-500 dark:text-gray-400">Loading notes...</div>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-red-500 dark:text-red-400">{error}</div>
-          </div>
-        ) : filteredNotes.length === 0 ? (
+        {contentType === 'notes' ? (
+          // Notes Display
+          notesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-500 dark:text-gray-400">Loading notes...</div>
+            </div>
+          ) : notesError ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-red-500 dark:text-red-400">{notesError}</div>
+            </div>
+          ) : filteredNotes.length === 0 ? (
           <div className="text-center py-12">
             <StickyNote className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
             <div className="text-gray-500 dark:text-gray-400 mb-4">
@@ -358,6 +473,43 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               </div>
             ))}
           </div>
+        )
+        ) : (
+          // Canvases Display
+          canvasesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-500 dark:text-gray-400">Loading canvases...</div>
+            </div>
+          ) : canvasesError ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-red-500 dark:text-red-400">{canvasesError}</div>
+            </div>
+          ) : canvases.length === 0 ? (
+            <div className="text-center py-12">
+              <PenTool className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+              <div className="text-gray-500 dark:text-gray-400 mb-4">
+                No canvases in this project yet. Create your first canvas!
+              </div>
+              <button
+                onClick={handleCreateCanvas}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Canvas</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {canvases.map((canvas) => (
+                <CanvasCard
+                  key={canvas.id}
+                  canvas={canvas}
+                  onOpen={handleOpenCanvas}
+                  onDelete={handleDeleteCanvas}
+                />
+              ))}
+            </div>
+          )
         )}
       </div>
 
@@ -370,6 +522,14 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         mode={modalMode}
         onEdit={modalMode === 'view' ? handleEditFromView : undefined}
         projectId={project.id}
+      />
+
+      {/* Canvas Editor */}
+      <CanvasEditor
+        canvas={editingCanvas}
+        isOpen={showCanvasEditor}
+        onSave={handleUpdateCanvas}
+        onClose={handleCloseCanvas}
       />
     </div>
   );

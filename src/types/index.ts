@@ -37,6 +37,19 @@ export interface NoteImage {
   };
 }
 
+export interface Canvas {
+  id: string;
+  title: string;
+  elements: any[]; // Excalidraw elements
+  appState?: any; // Excalidraw app state
+  files?: any; // Excalidraw files (for images in drawings)
+  projectId: string;
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  thumbnail?: string; // Optional thumbnail for preview
+}
+
 export interface Note {
   id: string;
   title: string;

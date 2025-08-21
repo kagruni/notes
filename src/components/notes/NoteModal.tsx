@@ -463,6 +463,7 @@ export default function NoteModal({ isOpen, onClose, onSubmit, note, mode = 'cre
                 </div>
               )}
 
+
               {/* Close button for view mode */}
               <div className="flex justify-end pt-4">
                 <button
