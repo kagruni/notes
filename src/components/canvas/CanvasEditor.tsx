@@ -286,6 +286,27 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               toggleTheme: true,
             }
           }}
+          MainMenu={{
+            DefaultItems: {
+              LoadScene: true,
+              SaveToActiveFile: true,
+              SaveAsImage: true,
+              Help: true,
+              ClearCanvas: true,
+            },
+            CustomItems: [
+              {
+                name: 'toggleTheme',
+                text: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+                icon: theme === 'dark' ? '☀️' : '🌙',
+                order: 2,
+                action: () => {
+                  console.log('Theme toggle clicked, current theme:', theme);
+                  toggleTheme();
+                }
+              }
+            ]
+          }}
         />
       </div>
 
