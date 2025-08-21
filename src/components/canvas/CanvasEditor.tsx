@@ -4,34 +4,19 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
 import { Canvas } from '@/types';
+import { useTheme } from '@/contexts/ThemeContext';
 
 // Import Excalidraw CSS - CRITICAL for proper rendering
 import '@excalidraw/excalidraw/index.css';
 
-// Dynamically import Excalidraw component
-const Excalidraw = dynamic(
+// Dynamically import Excalidraw component  
+const ExcalidrawComponent = dynamic(
   async () => {
     const excalidrawModule = await import('@excalidraw/excalidraw');
     return excalidrawModule.Excalidraw;
   },
   { 
     ssr: false,
-    loading: () => (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#ffffff',
-        zIndex: 99999
-      }}>
-        <div>Loading canvas...</div>
-      </div>
-    )
   }
 );
 
@@ -43,12 +28,13 @@ interface CanvasEditorProps {
 }
 
 export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: CanvasEditorProps) {
+  const { theme, toggleTheme } = useTheme();
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [title, setTitle] = useState('');
-  const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [mounted, setMounted] = useState(false);
   const sceneVersion = useRef<number>(0);
+  const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -66,17 +52,51 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     setHasChanges(false);
   }, [canvas]);
 
+  // Reset scene version when theme changes to prevent false change detection
+  useEffect(() => {
+    sceneVersion.current = 0;
+  }, [theme]);
+
   // Initialize with existing canvas data if editing
   const initialData = canvas && canvas.elements ? {
     elements: canvas.elements || [],
-    appState: canvas.appState || {},
+    appState: {
+      theme: theme,
+      // Set theme-appropriate defaults
+      viewBackgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
+      currentItemStrokeColor: theme === 'dark' ? '#ffffff' : '#000000',
+      currentItemBackgroundColor: 'transparent',
+      currentItemFillStyle: 'solid',
+      currentItemStrokeWidth: 1,
+      currentItemRoughness: 1,
+      currentItemOpacity: 100,
+      currentItemFontFamily: 1,
+      currentItemFontSize: 20,
+      ...canvas.appState,
+    },
     files: canvas.files || {},
     scrollToContent: true
-  } : undefined;
+  } : {
+    // Default data for new canvas
+    elements: [],
+    appState: {
+      theme: theme,
+      viewBackgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
+      currentItemStrokeColor: theme === 'dark' ? '#ffffff' : '#000000',
+      currentItemBackgroundColor: 'transparent',
+      currentItemFillStyle: 'solid',
+      currentItemStrokeWidth: 1,
+      currentItemRoughness: 1,
+      currentItemOpacity: 100,
+      currentItemFontFamily: 1,
+      currentItemFontSize: 20,
+    },
+    files: {}
+  };
 
   // Auto-save functionality
   const handleAutoSave = useCallback(async () => {
-    if (!excalidrawAPI || !canvas || !hasChanges) return;
+    if (!excalidrawAPI || !canvas) return;
 
     try {
       const elements = excalidrawAPI.getSceneElements();
@@ -107,28 +127,57 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave, hasChanges]);
+  }, [excalidrawAPI, canvas, title, onSave]);
 
   // Setup auto-save on changes
   useEffect(() => {
     if (hasChanges) {
-      if (autoSaveTimeout) {
-        clearTimeout(autoSaveTimeout);
+      if (autoSaveTimeout.current) {
+        clearTimeout(autoSaveTimeout.current);
       }
       
-      const timeout = setTimeout(() => {
-        handleAutoSave();
+      autoSaveTimeout.current = setTimeout(async () => {
+        if (!excalidrawAPI || !canvas) return;
+
+        try {
+          const elements = excalidrawAPI.getSceneElements();
+          const appState = excalidrawAPI.getAppState();
+          const files = excalidrawAPI.getFiles();
+
+          await onSave(canvas.id, {
+            title,
+            elements,
+            appState: {
+              theme: theme,
+              viewBackgroundColor: appState.viewBackgroundColor,
+              currentItemFontFamily: appState.currentItemFontFamily,
+              currentItemFontSize: appState.currentItemFontSize,
+              currentItemStrokeColor: appState.currentItemStrokeColor,
+              currentItemBackgroundColor: appState.currentItemBackgroundColor,
+              currentItemFillStyle: appState.currentItemFillStyle,
+              currentItemStrokeWidth: appState.currentItemStrokeWidth,
+              currentItemRoughness: appState.currentItemRoughness,
+              currentItemOpacity: appState.currentItemOpacity,
+              zoom: appState.zoom,
+              scrollX: appState.scrollX,
+              scrollY: appState.scrollY,
+            },
+            files: files || {}
+          });
+          
+          setHasChanges(false);
+        } catch (error) {
+          console.error('Failed to auto-save canvas:', error);
+        }
       }, 2000);
-      
-      setAutoSaveTimeout(timeout);
     }
     
     return () => {
-      if (autoSaveTimeout) {
-        clearTimeout(autoSaveTimeout);
+      if (autoSaveTimeout.current) {
+        clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [hasChanges, handleAutoSave, autoSaveTimeout]);
+  }, [hasChanges, excalidrawAPI, canvas, title, onSave]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -194,7 +243,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         width: '100vw',
         height: '100vh',
         zIndex: 99999,
-        backgroundColor: '#ffffff',
+        backgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
       }}
     >
       {/* Excalidraw container - minimal wrapper */}
@@ -206,8 +255,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         }}
         className="excalidraw-wrapper"
       >
-        <Excalidraw
+        <ExcalidrawComponent
           initialData={initialData}
+          theme={theme}
           onChange={() => {
             // Track scene version to detect real changes
             // Excalidraw fires onChange on mount and during initialization
@@ -221,6 +271,16 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           onPointerUpdate={() => {}}
           excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
           name={title}
+          UIOptions={{
+            canvasActions: {
+              toggleTheme: true,
+            }
+          }}
+          onThemeChange={(newTheme: 'light' | 'dark') => {
+            if (newTheme !== theme) {
+              toggleTheme();
+            }
+          }}
         />
       </div>
 
@@ -235,13 +295,14 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           width: '32px',
           height: '32px',
           borderRadius: '6px',
-          backgroundColor: 'rgba(255, 255, 255, 0.9)',
-          border: '1px solid rgba(0, 0, 0, 0.1)',
+          backgroundColor: theme === 'dark' ? 'rgba(60, 60, 60, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+          border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(0, 0, 0, 0.1)',
+          color: theme === 'dark' ? '#ffffff' : '#000000',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+          boxShadow: theme === 'dark' ? '0 2px 4px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
         }}
         title="Close (Esc)"
         aria-label="Close canvas"
@@ -272,11 +333,11 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             zIndex: 100000,
             padding: '6px 12px',
             borderRadius: '20px',
-            backgroundColor: '#fb923c',
-            color: 'white',
+            backgroundColor: theme === 'dark' ? '#4ade80' : '#fb923c',
+            color: theme === 'dark' ? '#000000' : '#ffffff',
             fontSize: '13px',
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+            boxShadow: theme === 'dark' ? '0 2px 4px rgba(0, 0, 0, 0.4)' : '0 2px 4px rgba(0, 0, 0, 0.2)',
           }}
         >
           Auto-saving...
