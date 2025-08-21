@@ -73,6 +73,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       currentItemFontFamily: 1,
       currentItemFontSize: 20,
       ...canvas.appState,
+      // Always override theme to match current app theme
+      theme: theme,
     },
     files: canvas.files || {},
     scrollToContent: true
@@ -259,7 +261,13 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         <ExcalidrawComponent
           initialData={initialData}
           theme={theme}
-          onChange={() => {
+          onChange={(elements, appState) => {
+            // Check if theme changed in Excalidraw and sync with our app
+            if (appState.theme && appState.theme !== theme) {
+              console.log('Theme changed in Excalidraw:', appState.theme, 'current app theme:', theme);
+              toggleTheme();
+            }
+            
             // Track scene version to detect real changes
             // Excalidraw fires onChange on mount and during initialization
             // We only want to track changes after initial setup
@@ -273,9 +281,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           onPointerUpdate={() => {}}
           excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
           name={title}
-          MainMenu={{
-            DefaultItems: {
-              ToggleTheme: true,
+          UIOptions={{
+            canvasActions: {
+              toggleTheme: true,
             }
           }}
         />
