@@ -81,10 +81,36 @@ export function useCanvases(projectId?: string) {
     }
   };
 
+  // Helper function to remove undefined values recursively
+  const cleanUndefinedValues = (obj: any): any => {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(cleanUndefinedValues);
+    }
+    
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          cleaned[key] = cleanUndefinedValues(value);
+        }
+      }
+      return cleaned;
+    }
+    
+    return obj;
+  };
+
   const updateCanvas = async (canvasId: string, updates: Partial<Pick<Canvas, 'title' | 'elements' | 'appState' | 'files' | 'thumbnail'>>) => {
     try {
+      // Clean undefined values from updates
+      const cleanedUpdates = cleanUndefinedValues(updates);
+      
       await updateDoc(doc(db, 'canvases', canvasId), {
-        ...updates,
+        ...cleanedUpdates,
         updatedAt: serverTimestamp(),
       });
     } catch (err) {

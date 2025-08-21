@@ -105,8 +105,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
 
       await onSave(canvas.id, {
         title,
-        elements,
+        elements: elements || [],
         appState: {
+          theme: theme,
           viewBackgroundColor: appState.viewBackgroundColor,
           currentItemFontFamily: appState.currentItemFontFamily,
           currentItemFontSize: appState.currentItemFontSize,
@@ -127,7 +128,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave]);
+  }, [excalidrawAPI, canvas, title, onSave, theme]);
 
   // Setup auto-save on changes
   useEffect(() => {
@@ -146,7 +147,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
 
           await onSave(canvas.id, {
             title,
-            elements,
+            elements: elements || [],
             appState: {
               theme: theme,
               viewBackgroundColor: appState.viewBackgroundColor,
@@ -169,7 +170,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         } catch (error) {
           console.error('Failed to auto-save canvas:', error);
         }
-      }, 2000);
+      }, 1000);
     }
     
     return () => {
@@ -261,24 +262,20 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           onChange={() => {
             // Track scene version to detect real changes
             // Excalidraw fires onChange on mount and during initialization
-            // We only want to track changes after the second onChange event
+            // We only want to track changes after initial setup
             sceneVersion.current = sceneVersion.current + 1;
-            // Only mark as changed after initial setup (version > 2)
-            if (sceneVersion.current > 2) {
+            // Only mark as changed after initial setup (version > 1)
+            // This makes auto-save more sensitive to changes
+            if (sceneVersion.current > 1) {
               setHasChanges(true);
             }
           }}
           onPointerUpdate={() => {}}
           excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
           name={title}
-          UIOptions={{
-            canvasActions: {
-              toggleTheme: true,
-            }
-          }}
-          onThemeChange={(newTheme: 'light' | 'dark') => {
-            if (newTheme !== theme) {
-              toggleTheme();
+          MainMenu={{
+            DefaultItems: {
+              ToggleTheme: true,
             }
           }}
         />
@@ -322,27 +319,6 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         </svg>
       </button>
 
-      {/* Auto-save indicator */}
-      {hasChanges && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '12px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 100000,
-            padding: '6px 12px',
-            borderRadius: '20px',
-            backgroundColor: theme === 'dark' ? '#4ade80' : '#fb923c',
-            color: theme === 'dark' ? '#000000' : '#ffffff',
-            fontSize: '13px',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
-            boxShadow: theme === 'dark' ? '0 2px 4px rgba(0, 0, 0, 0.4)' : '0 2px 4px rgba(0, 0, 0, 0.2)',
-          }}
-        >
-          Auto-saving...
-        </div>
-      )}
     </div>
   );
 
