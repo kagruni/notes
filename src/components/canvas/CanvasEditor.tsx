@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
 import { Canvas } from '@/types';
 import { useTheme } from '@/contexts/ThemeContext';
+import { usePreBundledLibraries } from '@/hooks/usePreBundledLibraries';
 
 // Import Excalidraw CSS - CRITICAL for proper rendering
 import '@excalidraw/excalidraw/index.css';
@@ -29,6 +30,7 @@ interface CanvasEditorProps {
 
 export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: CanvasEditorProps) {
   const { theme, toggleTheme } = useTheme();
+  const { getExcalidrawLibraryItems, loading: librariesLoading, error: librariesError } = usePreBundledLibraries();
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [title, setTitle] = useState('');
@@ -56,6 +58,66 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   useEffect(() => {
     sceneVersion.current = 0;
   }, [theme]);
+
+  // Get pre-bundled libraries
+  const preBundledLibraries = getExcalidrawLibraryItems();
+
+  // Helper function to clean elements for Firebase compatibility
+  const cleanElementsForFirebase = useCallback((elements: any[]) => {
+    return (elements || []).map(element => {
+      const cleaned = { ...element };
+      
+      // Recursively clean all properties to find and fix nested arrays
+      Object.keys(cleaned).forEach(key => {
+        const value = cleaned[key];
+        
+        if (key === 'points' && Array.isArray(value)) {
+          // Handle points array specifically for lines/arrows
+          cleaned[key] = value.map(point => {
+            if (Array.isArray(point)) {
+              // Force to numbers and ensure only 2 elements
+              const x = typeof point[0] === 'number' ? point[0] : 0;
+              const y = typeof point[1] === 'number' ? point[1] : 0;
+              return [x, y];
+            }
+            return point;
+          });
+        } else if (key === 'boundElements' && Array.isArray(value)) {
+          // Handle boundElements array
+          cleaned[key] = value
+            .filter(el => el != null)
+            .map(el => {
+              if (Array.isArray(el)) {
+                console.warn(`🔧 Converting nested boundElement array to object:`, el);
+                return el.length === 1 ? el[0] : { data: el };
+              }
+              return el;
+            });
+        } else if (key === 'groupIds' && Array.isArray(value)) {
+          // Handle groupIds array
+          cleaned[key] = value
+            .filter(id => typeof id === 'string' || typeof id === 'number')
+            .map(id => String(id));
+        } else if (Array.isArray(value)) {
+          // Handle any other arrays that might contain nested arrays
+          cleaned[key] = value.map(item => {
+            if (Array.isArray(item)) {
+              console.warn(`🔧 Found unexpected nested array in ${key}:`, item);
+              // Flatten aggressively
+              const flattened = item.flat(Infinity);
+              if (flattened.length === 2 && typeof flattened[0] === 'number' && typeof flattened[1] === 'number') {
+                return flattened; // Treat as coordinate pair
+              }
+              return flattened.length === 1 ? flattened[0] : { data: flattened };
+            }
+            return item;
+          });
+        }
+      });
+      
+      return cleaned;
+    });
+  }, []);
 
   // Initialize with existing canvas data if editing
   const initialData = canvas && canvas.elements ? {
@@ -93,7 +155,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       currentItemFontFamily: 1,
       currentItemFontSize: 20,
     },
-    files: {}
+    files: {},
+    libraryItems: preBundledLibraries
   };
 
   // Auto-save functionality
@@ -105,9 +168,12 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       const appState = excalidrawAPI.getAppState();
       const files = excalidrawAPI.getFiles();
 
+      // Clean elements to remove nested arrays for Firebase compatibility
+      const cleanedElements = cleanElementsForFirebase(elements);
+
       await onSave(canvas.id, {
         title,
-        elements: elements || [],
+        elements: cleanedElements,
         appState: {
           theme: theme,
           viewBackgroundColor: appState.viewBackgroundColor,
@@ -130,7 +196,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave, theme]);
+  }, [excalidrawAPI, canvas, title, onSave, theme, cleanElementsForFirebase]);
 
   // Setup auto-save on changes
   useEffect(() => {
@@ -147,9 +213,12 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           const appState = excalidrawAPI.getAppState();
           const files = excalidrawAPI.getFiles();
 
+          // Clean elements to remove nested arrays for Firebase compatibility
+          const cleanedElements = cleanElementsForFirebase(elements);
+
           await onSave(canvas.id, {
             title,
-            elements: elements || [],
+            elements: cleanedElements,
             appState: {
               theme: theme,
               viewBackgroundColor: appState.viewBackgroundColor,
@@ -180,7 +249,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [hasChanges, excalidrawAPI, canvas, title, onSave]);
+  }, [hasChanges, excalidrawAPI, canvas, title, onSave, cleanElementsForFirebase]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -317,6 +386,18 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     }
   }, [isOpen, mounted]);
 
+  // Add debug logging
+  useEffect(() => {
+    if (!librariesLoading && preBundledLibraries.length > 0) {
+      console.log(`🎨 Canvas Editor: Loaded ${preBundledLibraries.length} library items`);
+      console.log(`🎨 Canvas Editor: Sample library items:`, preBundledLibraries.slice(0, 2));
+      console.log(`🎨 Canvas Editor: Passing to Excalidraw initialData.libraryItems:`, preBundledLibraries);
+    }
+    if (librariesError) {
+      console.error('🚨 Canvas Editor: Library loading error:', librariesError);
+    }
+  }, [librariesLoading, preBundledLibraries.length, librariesError]);
+
   if (!isOpen || !canvas || !mounted) return null;
 
   // Render in a portal to escape all parent styles
@@ -369,6 +450,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         `}</style>
         <ExcalidrawComponent
           initialData={initialData}
+          libraryItems={preBundledLibraries}
           theme={theme}
           onChange={(elements, appState) => {
             // Check if theme changed in Excalidraw and sync with our app
@@ -388,7 +470,31 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             }
           }}
           onPointerUpdate={() => {}}
-          excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
+          excalidrawAPI={(api: any) => {
+            setExcalidrawAPI(api);
+            // Try to load libraries using the API
+            if (api && preBundledLibraries.length > 0) {
+              console.log('🔧 Attempting to load libraries via excalidrawAPI:', preBundledLibraries.length);
+              try {
+                // Try different API methods to load libraries
+                if (api.updateLibrary) {
+                  api.updateLibrary({ libraryItems: preBundledLibraries });
+                  console.log('✅ Used api.updateLibrary');
+                } else if (api.setLibraryItems) {
+                  api.setLibraryItems(preBundledLibraries);
+                  console.log('✅ Used api.setLibraryItems');
+                } else if (api.addLibraryItems) {
+                  api.addLibraryItems(preBundledLibraries);
+                  console.log('✅ Used api.addLibraryItems');
+                } else {
+                  console.log('❌ No library loading method found on excalidrawAPI');
+                  console.log('Available API methods:', Object.keys(api));
+                }
+              } catch (error) {
+                console.error('❌ Error loading libraries via API:', error);
+              }
+            }
+          }}
           name={title}
           UIOptions={{
             canvasActions: {
