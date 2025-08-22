@@ -1,0 +1,176 @@
+{
+  "rules": {
+    "sessions": {
+      "$canvasId": {
+        ".read": "auth != null && (root.child('canvases').child($canvasId).child('sharedWith').hasChild(auth.uid) || root.child('canvases').child($canvasId).child('userId').val() === auth.uid)",
+        ".write": "auth != null && (root.child('canvases').child($canvasId).child('sharedWith').hasChild(auth.uid) || root.child('canvases').child($canvasId).child('userId').val() === auth.uid)",
+        
+        "metadata": {
+          ".validate": "newData.hasChildren(['started', 'version', 'locked'])",
+          "started": {
+            ".validate": "newData.isNumber()"
+          },
+          "version": {
+            ".validate": "newData.isNumber()"
+          },
+          "locked": {
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        
+        "presence": {
+          "$userId": {
+            ".write": "auth != null && auth.uid === $userId",
+            ".validate": "newData.hasChildren(['user', 'cursor', 'viewport', 'state', 'lastSeen'])",
+            
+            "user": {
+              ".validate": "newData.hasChildren(['id', 'email', 'displayName', 'color'])",
+              "id": {
+                ".validate": "newData.val() === $userId"
+              },
+              "email": {
+                ".validate": "newData.isString()"
+              },
+              "displayName": {
+                ".validate": "newData.isString()"
+              },
+              "photoURL": {
+                ".validate": "newData.isString()"
+              },
+              "color": {
+                ".validate": "newData.isString()"
+              }
+            },
+            
+            "cursor": {
+              ".validate": "newData.hasChildren(['x', 'y', 'isActive'])",
+              "x": {
+                ".validate": "newData.isNumber()"
+              },
+              "y": {
+                ".validate": "newData.isNumber()"
+              },
+              "isActive": {
+                ".validate": "newData.isBoolean()"
+              }
+            },
+            
+            "viewport": {
+              ".validate": "newData.hasChildren(['x', 'y', 'zoom'])",
+              "x": {
+                ".validate": "newData.isNumber()"
+              },
+              "y": {
+                ".validate": "newData.isNumber()"
+              },
+              "zoom": {
+                ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 10"
+              }
+            },
+            
+            "state": {
+              ".validate": "newData.hasChildren(['isDrawing', 'selectedElements', 'tool'])",
+              "isDrawing": {
+                ".validate": "newData.isBoolean()"
+              },
+              "selectedElements": {
+                "$elementId": {
+                  ".validate": "newData.isString()"
+                }
+              },
+              "tool": {
+                ".validate": "newData.isString()"
+              }
+            },
+            
+            "lastSeen": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
+        
+        "operations": {
+          "$operationId": {
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['id', 'userId', 'timestamp', 'type', 'data', 'localVersion', 'serverVersion'])",
+            
+            "id": {
+              ".validate": "newData.val() === $operationId"
+            },
+            "userId": {
+              ".validate": "newData.val() === auth.uid"
+            },
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "type": {
+              ".validate": "newData.val() === 'element-add' || newData.val() === 'element-update' || newData.val() === 'element-delete' || newData.val() === 'element-move'"
+            },
+            "data": {
+              ".validate": true
+            },
+            "localVersion": {
+              ".validate": "newData.isNumber()"
+            },
+            "serverVersion": {
+              ".validate": "newData.isNumber()"
+            }
+          },
+          
+          ".indexOn": ["timestamp", "userId"]
+        },
+        
+        "elements": {
+          "snapshot": {
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['elements', 'version', 'lastUpdated'])",
+            
+            "elements": {
+              ".validate": true
+            },
+            "version": {
+              ".validate": "newData.isNumber()"
+            },
+            "lastUpdated": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
+        
+        "chat": {
+          "$messageId": {
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['id', 'userId', 'message', 'timestamp', 'position'])",
+            
+            "id": {
+              ".validate": "newData.val() === $messageId"
+            },
+            "userId": {
+              ".validate": "newData.val() === auth.uid"
+            },
+            "message": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "position": {
+              ".validate": "newData.hasChildren(['x', 'y'])",
+              "x": {
+                ".validate": "newData.isNumber()"
+              },
+              "y": {
+                ".validate": "newData.isNumber()"
+              }
+            }
+          },
+          
+          ".indexOn": ["timestamp", "userId"]
+        }
+      }
+    },
+    
+    ".read": false,
+    ".write": false
+  }
+}

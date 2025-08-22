@@ -6,6 +6,19 @@ import { createPortal } from 'react-dom';
 import { Canvas } from '@/types';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePreBundledLibraries } from '@/hooks/usePreBundledLibraries';
+import { usePresence } from '@/hooks/usePresence';
+import { useOperations } from '@/hooks/useOperations';
+import ShareButton from './ShareButton';
+import CollaborativeCursors from './CollaborativeCursors';
+import CursorChat from './CursorChat';
+import CollaboratorsList from './CollaboratorsList';
+import { X, Save, Users, Wifi, WifiOff } from 'lucide-react';
+import { 
+  detectChanges, 
+  changesToOperations, 
+  applyOperation, 
+  throttle 
+} from '@/utils/excalidraw-collab';
 
 // Import Excalidraw CSS - CRITICAL for proper rendering
 import '@excalidraw/excalidraw/index.css';
@@ -39,6 +52,67 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   const [mounted, setMounted] = useState(false);
   const sceneVersion = useRef<number>(0);
   const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const lastElements = useRef<any[]>([]);
+  const isApplyingRemoteOp = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Collaboration state
+  const [collaborationEnabled, setCollaborationEnabled] = useState(false);
+  const [showCollaborators, setShowCollaborators] = useState(true);
+
+  // Initialize collaboration hooks
+  const {
+    otherUsers,
+    isConnected,
+    userColor,
+    updateCursor,
+    sendMessage,
+    totalUsers
+  } = usePresence({
+    canvasId: canvas?.id || '',
+    enabled: collaborationEnabled && isOpen && !!canvas,
+    callbacks: {
+      onUserJoin: (user) => {
+        console.log('User joined:', user.displayName);
+      },
+      onUserLeave: (userId) => {
+        console.log('User left:', userId);
+      }
+    }
+  });
+
+  const {
+    queueOperation,
+    isSyncing,
+    isInitialized: operationsInitialized
+  } = useOperations({
+    canvasId: canvas?.id || '',
+    enabled: collaborationEnabled && isOpen && !!canvas,
+    callbacks: {
+      onRemoteOperation: (operation) => {
+        if (!excalidrawAPI || isApplyingRemoteOp.current) return;
+        
+        console.log('Applying remote operation:', operation.type);
+        isApplyingRemoteOp.current = true;
+        
+        try {
+          const currentElements = excalidrawAPI.getSceneElements();
+          const updatedElements = applyOperation(currentElements, operation);
+          
+          // Update Excalidraw with remote changes
+          excalidrawAPI.updateScene({
+            elements: updatedElements
+          });
+          
+          lastElements.current = updatedElements;
+        } catch (error) {
+          console.error('Failed to apply remote operation:', error);
+        } finally {
+          isApplyingRemoteOp.current = false;
+        }
+      }
+    }
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -48,10 +122,12 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   useEffect(() => {
     if (canvas) {
       setTitle(canvas.title);
+      setCollaborationEnabled(canvas.collaborationEnabled || false);
       // Reset scene version when canvas changes
       sceneVersion.current = 0;
     } else {
       setTitle('Untitled Canvas');
+      setCollaborationEnabled(false);
     }
     setHasChanges(false);
   }, [canvas]);
@@ -464,15 +540,195 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         backgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
       }}
     >
-      {/* Excalidraw container - minimal wrapper */}
+      {/* Toolbar */}
       <div
         style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '56px',
+          backgroundColor: theme === 'dark' ? '#2a2a2a' : '#f9fafb',
+          borderBottom: `1px solid ${theme === 'dark' ? '#404040' : '#e5e7eb'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          zIndex: 100000,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Title Input */}
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleAutoSave}
+            style={{
+              padding: '6px 12px',
+              fontSize: '16px',
+              fontWeight: '500',
+              backgroundColor: 'transparent',
+              border: `1px solid ${theme === 'dark' ? '#404040' : '#e5e7eb'}`,
+              borderRadius: '6px',
+              color: theme === 'dark' ? '#ffffff' : '#111827',
+              outline: 'none',
+              minWidth: '200px',
+            }}
+            placeholder="Canvas Title"
+          />
+          
+          {/* Save Status */}
+          {hasChanges && (
+            <span style={{ 
+              fontSize: '12px', 
+              color: theme === 'dark' ? '#9ca3af' : '#6b7280',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <Save className="w-3 h-3" />
+              Saving...
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Collaboration Status */}
+          {collaborationEnabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Connection Status */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  backgroundColor: isConnected 
+                    ? (theme === 'dark' ? '#10b98120' : '#10b98120')
+                    : (theme === 'dark' ? '#ef444420' : '#ef444420'),
+                  color: isConnected ? '#10b981' : '#ef4444'
+                }}
+              >
+                {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                <span style={{ fontSize: '12px', fontWeight: '500' }}>
+                  {isConnected ? 'Connected' : 'Offline'}
+                </span>
+              </div>
+              
+              {/* Active Users Count */}
+              {totalUsers > 0 && (
+                <button
+                  onClick={() => setShowCollaborators(!showCollaborators)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: theme === 'dark' ? '#374151' : '#f3f4f6',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: theme === 'dark' ? '#d1d5db' : '#4b5563',
+                  }}
+                >
+                  <Users className="w-4 h-4" />
+                  <span style={{ fontSize: '12px', fontWeight: '500' }}>
+                    {totalUsers} {totalUsers === 1 ? 'user' : 'users'}
+                  </span>
+                </button>
+              )}
+              
+              {/* Sync Status */}
+              {isSyncing && (
+                <span style={{ 
+                  fontSize: '12px', 
+                  color: theme === 'dark' ? '#9ca3af' : '#6b7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  Syncing...
+                </span>
+              )}
+            </div>
+          )}
+          {/* Share Button */}
+          {canvas && (
+            <ShareButton
+              canvas={canvas}
+              onUpdate={async (updates) => {
+                await onSave(canvas.id, updates);
+                // Update local canvas state if needed
+                if (updates.sharedWith || updates.permissions || updates.shareSettings) {
+                  // The parent component should handle updating the canvas object
+                  // through the onSave callback
+                }
+              }}
+            />
+          )}
+          
+          {/* Close Button */}
+          <button
+            onClick={handleClose}
+            style={{
+              padding: '8px',
+              backgroundColor: theme === 'dark' ? '#374151' : '#f3f4f6',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: theme === 'dark' ? '#d1d5db' : '#4b5563',
+            }}
+            aria-label="Close canvas"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Excalidraw container - minimal wrapper */}
+      <div
+        ref={containerRef}
+        style={{
           width: '100%',
-          height: '100%',
+          height: 'calc(100% - 56px)',
           position: 'relative',
+          top: '56px',
         }}
         className="excalidraw-wrapper"
       >
+        {/* Collaborative Cursors Layer */}
+        {collaborationEnabled && otherUsers.length > 0 && (
+          <CollaborativeCursors 
+            users={otherUsers}
+            containerRef={containerRef}
+            zoom={excalidrawAPI?.getAppState()?.zoom?.value || 1}
+            viewportOffset={{
+              x: excalidrawAPI?.getAppState()?.scrollX || 0,
+              y: excalidrawAPI?.getAppState()?.scrollY || 0
+            }}
+          />
+        )}
+        
+        {/* Collaborators List */}
+        {collaborationEnabled && showCollaborators && otherUsers.length > 0 && (
+          <CollaboratorsList 
+            users={otherUsers}
+            currentUserColor={userColor}
+          />
+        )}
+        
+        {/* Cursor Chat */}
+        {collaborationEnabled && isConnected && (
+          <CursorChat 
+            onSendMessage={sendMessage}
+            userColor={userColor}
+          />
+        )}
         {/* Hide social links with CSS */}
         <style>{`
           [data-testid="socials"] {
@@ -510,19 +766,40 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               toggleTheme();
             }
             
+            // Don't process if we're applying remote operations
+            if (isApplyingRemoteOp.current) return;
+            
             // Track scene version to detect real changes
-            // Excalidraw fires onChange on mount and during initialization
-            // We only want to track changes after initial setup
             sceneVersion.current = sceneVersion.current + 1;
+            
+            // Detect and queue operations for collaboration
+            if (collaborationEnabled && operationsInitialized && sceneVersion.current > 1) {
+              const changes = detectChanges(lastElements.current, elements);
+              const operations = changesToOperations(changes);
+              
+              operations.forEach(op => {
+                queueOperation(op.type, op.elementIds, op.data);
+              });
+              
+              lastElements.current = [...elements];
+            }
+            
             // Only mark as changed after initial setup (version > 1)
-            // This makes auto-save more sensitive to changes
             if (sceneVersion.current > 1) {
               setHasChanges(true);
             }
           }}
-          onPointerUpdate={() => {}}
+          onPointerUpdate={(payload) => {
+            if (collaborationEnabled && payload.x !== undefined && payload.y !== undefined) {
+              updateCursor(payload.x, payload.y);
+            }
+          }}
           excalidrawAPI={(api: any) => {
             setExcalidrawAPI(api);
+            // Initialize last elements for collaboration
+            if (api) {
+              lastElements.current = api.getSceneElements() || [];
+            }
             // Try to load libraries using the API
             if (api && preBundledLibraries.length > 0) {
               console.log('🔧 Attempting to load libraries via excalidrawAPI:', preBundledLibraries.length);

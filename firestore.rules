@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(resource) {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+    
+    function hasCanvasAccess(canvasId) {
+      let canvas = get(/databases/$(database)/documents/canvases/$(canvasId));
+      return isSignedIn() && (
+        isOwner(canvas) ||
+        request.auth.uid in canvas.data.sharedWith ||
+        (canvas.data.shareSettings.allowPublicAccess == true && 
+         canvas.data.shareSettings.publicShareToken != null)
+      );
+    }
+    
+    function getCanvasPermission(canvasId) {
+      let canvas = get(/databases/$(database)/documents/canvases/$(canvasId));
+      return isSignedIn() && canvas.data.permissions[request.auth.uid].role;
+    }
+    
+    function canEditCanvas(canvasId) {
+      let canvas = get(/databases/$(database)/documents/canvases/$(canvasId));
+      return isSignedIn() && (
+        isOwner(canvas) ||
+        (request.auth.uid in canvas.data.sharedWith &&
+         canvas.data.permissions[request.auth.uid].role in ['editor', 'admin'])
+      );
+    }
+    
+    function canAdminCanvas(canvasId) {
+      let canvas = get(/databases/$(database)/documents/canvases/$(canvasId));
+      return isSignedIn() && (
+        isOwner(canvas) ||
+        (request.auth.uid in canvas.data.sharedWith &&
+         canvas.data.permissions[request.auth.uid].role == 'admin')
+      );
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Projects collection
+    match /projects/{projectId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.uid in resource.data.sharedWith
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if isOwner(resource);
+    }
+    
+    // Notes collection
+    match /notes/{noteId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        // Check if note's project is shared
+        get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.userId == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.sharedWith
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if isOwner(resource);
+    }
+    
+    // Canvas collection with collaboration rules
+    match /canvases/{canvasId} {
+      // Read access
+      allow read: if hasCanvasAccess(canvasId);
+      
+      // Create new canvas
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.userId;
+      
+      // Update canvas - permission-based
+      allow update: if canEditCanvas(canvasId) && (
+        // Viewers can only read
+        // Editors can update elements but not permissions
+        (!request.resource.data.diff(resource.data).hasAny(['permissions', 'sharedWith', 'shareSettings']) && 
+         canEditCanvas(canvasId)) ||
+        // Admins and owners can update everything
+        canAdminCanvas(canvasId)
+      );
+      
+      // Delete canvas - only owner
+      allow delete: if isOwner(resource);
+    }
+    
+    // Canvas invites collection
+    match /canvas_invites/{inviteId} {
+      // Anyone can read their own invites
+      allow read: if isSignedIn() && (
+        resource.data.invitedEmail == request.auth.token.email ||
+        resource.data.invitedBy.userId == request.auth.uid
+      );
+      
+      // Create invite - must have admin access to canvas
+      allow create: if isSignedIn() && canAdminCanvas(request.resource.data.canvasId) &&
+        request.resource.data.invitedBy.userId == request.auth.uid;
+      
+      // Update invite status - only invited user can accept/decline
+      allow update: if isSignedIn() && 
+        resource.data.invitedEmail == request.auth.token.email &&
+        request.resource.data.diff(resource.data).hasOnly(['status', 'acceptedAt']);
+      
+      // Delete invite - only creator or invited user
+      allow delete: if isSignedIn() && (
+        resource.data.invitedBy.userId == request.auth.uid ||
+        resource.data.invitedEmail == request.auth.token.email
+      );
+    }
+    
+    // Rate limiting considerations (commented for reference)
+    // In production, implement these through Firebase Functions or client-side throttling:
+    // - Limit invite creation: max 10 invites per user per hour
+    // - Limit canvas updates: max 100 updates per minute per canvas
+    // - Limit share link generation: max 5 per canvas per day
+    // - Implement exponential backoff for repeated failures
+  }
+}
