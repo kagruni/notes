@@ -7,9 +7,10 @@ interface CanvasCardProps {
   canvas: Canvas;
   onOpen: (canvas: Canvas) => void;
   onDelete: (canvasId: string) => void;
+  onRename?: (canvas: Canvas) => void;
 }
 
-export default function CanvasCard({ canvas, onOpen, onDelete }: CanvasCardProps) {
+export default function CanvasCard({ canvas, onOpen, onDelete, onRename }: CanvasCardProps) {
   const formatDate = (date: Date | any) => {
     try {
       if (date?.toDate) {
@@ -34,6 +35,13 @@ export default function CanvasCard({ canvas, onOpen, onDelete }: CanvasCardProps
     }
   };
 
+  const handleRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onRename) {
+      onRename(canvas);
+    }
+  };
+
   const handleOpen = () => {
     onOpen(canvas);
   };
@@ -47,12 +55,12 @@ export default function CanvasCard({ canvas, onOpen, onDelete }: CanvasCardProps
       onClick={handleOpen}
     >
       {/* Canvas Preview Area */}
-      <div className="h-48 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 relative flex items-center justify-center">
+      <div className="h-48 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 relative flex items-center justify-center overflow-hidden">
         {canvas.thumbnail ? (
           <img 
             src={canvas.thumbnail} 
             alt={canvas.title}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
           />
         ) : (
           <div className="text-center">
@@ -77,21 +85,29 @@ export default function CanvasCard({ canvas, onOpen, onDelete }: CanvasCardProps
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate flex-1">
             {canvas.title}
           </h3>
-          <button
-            onClick={handleDelete}
-            className="ml-2 p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-            title="Delete canvas"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-1">
+            {onRename && (
+              <button
+                onClick={handleRename}
+                className="p-1 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                title="Rename canvas"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={handleDelete}
+              className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+              title="Delete canvas"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         
         <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
           <span>{formatDate(canvas.updatedAt)}</span>
-          <div className="flex items-center space-x-1">
-            <Edit3 className="w-3 h-3" />
-            <span>Edit</span>
-          </div>
+          <span className="text-xs">{elementCount > 0 ? `${elementCount} elements` : 'Empty'}</span>
         </div>
       </div>
     </div>

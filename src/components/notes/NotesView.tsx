@@ -10,6 +10,7 @@ import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
 import CanvasCard from '@/components/canvas/CanvasCard';
 import CanvasEditor from '@/components/canvas/CanvasEditor';
+import CanvasNameModal from '@/components/canvas/CanvasNameModal';
 import { groupNotesByCalendarWeek } from '@/utils/date';
 
 interface NotesViewProps {
@@ -30,6 +31,9 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const [contentType, setContentType] = useState<'notes' | 'canvases'>('notes');
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
   const [editingCanvas, setEditingCanvas] = useState<Canvas | null>(null);
+  const [showCanvasNameModal, setShowCanvasNameModal] = useState(false);
+  const [canvasModalMode, setCanvasModalMode] = useState<'create' | 'rename'>('create');
+  const [renamingCanvas, setRenamingCanvas] = useState<Canvas | null>(null);
 
   const filteredNotes = notes.filter(note =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -86,12 +90,18 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     setShowNoteModal(true);
   };
 
-  const handleCreateCanvas = async () => {
+  const handleCreateCanvas = () => {
+    setCanvasModalMode('create');
+    setRenamingCanvas(null);
+    setShowCanvasNameModal(true);
+  };
+
+  const handleConfirmCreateCanvas = async (title: string) => {
     try {
-      const canvasId = await createCanvas('Untitled Canvas', project.id);
+      const canvasId = await createCanvas(title, project.id);
       const newCanvas: Canvas = {
         id: canvasId,
-        title: 'Untitled Canvas',
+        title: title,
         elements: [],
         appState: {},
         files: {},
@@ -130,6 +140,24 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
     } catch (error) {
       console.error('Failed to delete canvas:', error);
       toast.error('Failed to delete canvas');
+    }
+  };
+
+  const handleRenameCanvas = (canvas: Canvas) => {
+    setCanvasModalMode('rename');
+    setRenamingCanvas(canvas);
+    setShowCanvasNameModal(true);
+  };
+
+  const handleConfirmRenameCanvas = async (newTitle: string) => {
+    if (!renamingCanvas) return;
+    
+    try {
+      await updateCanvas(renamingCanvas.id, { title: newTitle });
+      toast.success('Canvas renamed');
+    } catch (error) {
+      console.error('Failed to rename canvas:', error);
+      toast.error('Failed to rename canvas');
     }
   };
 
@@ -506,6 +534,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
                   canvas={canvas}
                   onOpen={handleOpenCanvas}
                   onDelete={handleDeleteCanvas}
+                  onRename={handleRenameCanvas}
                 />
               ))}
             </div>
@@ -530,6 +559,15 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
         isOpen={showCanvasEditor}
         onSave={handleUpdateCanvas}
         onClose={handleCloseCanvas}
+      />
+
+      {/* Canvas Name Modal */}
+      <CanvasNameModal
+        isOpen={showCanvasNameModal}
+        onClose={() => setShowCanvasNameModal(false)}
+        onConfirm={canvasModalMode === 'create' ? handleConfirmCreateCanvas : handleConfirmRenameCanvas}
+        initialName={canvasModalMode === 'rename' && renamingCanvas ? renamingCanvas.title : 'Untitled Canvas'}
+        title={canvasModalMode === 'create' ? 'Name Your Canvas' : 'Rename Canvas'}
       />
     </div>
   );
