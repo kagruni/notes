@@ -2,7 +2,7 @@
 
 import { Canvas } from '@/types';
 import { PenTool, Trash2, Edit3, Maximize2 } from 'lucide-react';
-import TestPreview from './TestPreview';
+import CanvasPreview from './CanvasPreview';
 
 interface CanvasCardProps {
   canvas: Canvas;
@@ -56,8 +56,8 @@ export default function CanvasCard({ canvas, onOpen, onDelete, onRename }: Canva
       onClick={handleOpen}
     >
       {/* Canvas Preview Area */}
-      <div className="h-48 relative overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
-        <TestPreview canvas={canvas} />
+      <div className="h-48 relative overflow-hidden">
+        <CanvasPreview canvas={canvas} />
         
         {/* Hover Overlay */}
         <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors duration-200 flex items-center justify-center pointer-events-none group-hover:pointer-events-auto">
