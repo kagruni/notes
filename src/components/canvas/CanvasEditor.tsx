@@ -62,66 +62,113 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   // Get pre-bundled libraries
   const preBundledLibraries = getExcalidrawLibraryItems();
 
-  // Helper function to clean elements for Firebase compatibility
-  const cleanElementsForFirebase = useCallback((elements: any[]) => {
+  // Transform elements for Firebase compatibility (nested arrays -> objects)
+  const transformElementsForFirebase = useCallback((elements: any[]) => {
     return (elements || []).map(element => {
-      const cleaned = { ...element };
+      const transformed = { ...element };
       
-      // Recursively clean all properties to find and fix nested arrays
-      Object.keys(cleaned).forEach(key => {
-        const value = cleaned[key];
+      Object.keys(transformed).forEach(key => {
+        const value = transformed[key];
         
         if (key === 'points' && Array.isArray(value)) {
-          // Handle points array specifically for lines/arrows
-          cleaned[key] = value.map(point => {
-            if (Array.isArray(point)) {
-              // Force to numbers and ensure only 2 elements
-              const x = typeof point[0] === 'number' ? point[0] : 0;
-              const y = typeof point[1] === 'number' ? point[1] : 0;
-              return [x, y];
+          // Convert points array [[x,y], [x,y]] to [{x, y}, {x, y}] for Firebase
+          transformed[key] = value.map(point => {
+            if (Array.isArray(point) && point.length >= 2) {
+              return { x: point[0], y: point[1] };
             }
+            // Already in object format or invalid
             return point;
           });
+        } else if (key === 'scale' && Array.isArray(value) && value.length === 2) {
+          // Convert scale [x, y] to {x, y}
+          transformed[key] = { x: value[0], y: value[1] };
         } else if (key === 'boundElements' && Array.isArray(value)) {
-          // Handle boundElements array
-          cleaned[key] = value
+          // Ensure boundElements are objects, not nested arrays
+          transformed[key] = value
             .filter(el => el != null)
             .map(el => {
               if (Array.isArray(el)) {
-                console.warn(`🔧 Converting nested boundElement array to object:`, el);
-                return el.length === 1 ? el[0] : { data: el };
+                console.warn(`🔧 Converting boundElement array to object:`, el);
+                return { id: el[0], type: el[1] || 'arrow' };
               }
               return el;
             });
         } else if (key === 'groupIds' && Array.isArray(value)) {
-          // Handle groupIds array
-          cleaned[key] = value
-            .filter(id => typeof id === 'string' || typeof id === 'number')
+          // Ensure groupIds is a flat array of strings
+          transformed[key] = value
+            .filter(id => id != null)
             .map(id => String(id));
         } else if (Array.isArray(value)) {
-          // Handle any other arrays that might contain nested arrays
-          cleaned[key] = value.map(item => {
-            if (Array.isArray(item)) {
-              console.warn(`🔧 Found unexpected nested array in ${key}:`, item);
-              // Flatten aggressively
-              const flattened = item.flat(Infinity);
-              if (flattened.length === 2 && typeof flattened[0] === 'number' && typeof flattened[1] === 'number') {
-                return flattened; // Treat as coordinate pair
+          // Check for any other nested arrays and convert them
+          const hasNestedArrays = value.some(item => Array.isArray(item));
+          if (hasNestedArrays) {
+            console.warn(`🔧 Found nested array in ${key}, converting to objects`);
+            transformed[key] = value.map(item => {
+              if (Array.isArray(item)) {
+                // Convert array to object representation
+                if (item.length === 2 && typeof item[0] === 'number' && typeof item[1] === 'number') {
+                  return { x: item[0], y: item[1] };
+                }
+                return { data: item };
               }
-              return flattened.length === 1 ? flattened[0] : { data: flattened };
-            }
-            return item;
-          });
+              return item;
+            });
+          }
         }
       });
       
-      return cleaned;
+      return transformed;
+    });
+  }, []);
+
+  // Transform elements from Firebase back to Excalidraw format
+  const transformElementsFromFirebase = useCallback((elements: any[]) => {
+    if (!elements) return [];
+    
+    return elements.map(element => {
+      const restored = { ...element };
+      
+      Object.keys(restored).forEach(key => {
+        const value = restored[key];
+        
+        if (key === 'points' && Array.isArray(value)) {
+          // Convert points from [{x, y}, {x, y}] back to [[x,y], [x,y]]
+          restored[key] = value.map(point => {
+            if (point && typeof point === 'object' && 'x' in point && 'y' in point) {
+              return [point.x, point.y];
+            }
+            // Already in array format or invalid
+            return point;
+          });
+        } else if (key === 'scale' && value && typeof value === 'object' && 'x' in value && 'y' in value) {
+          // Convert scale from {x, y} back to [x, y]
+          restored[key] = [value.x, value.y];
+        } else if (Array.isArray(value)) {
+          // Check if array contains objects that should be arrays
+          const needsConversion = value.some(item => 
+            item && typeof item === 'object' && 'x' in item && 'y' in item
+          );
+          if (needsConversion) {
+            restored[key] = value.map(item => {
+              if (item && typeof item === 'object' && 'x' in item && 'y' in item) {
+                return [item.x, item.y];
+              }
+              if (item && typeof item === 'object' && 'data' in item) {
+                return item.data;
+              }
+              return item;
+            });
+          }
+        }
+      });
+      
+      return restored;
     });
   }, []);
 
   // Initialize with existing canvas data if editing
   const initialData = canvas && canvas.elements ? {
-    elements: canvas.elements || [],
+    elements: transformElementsFromFirebase(canvas.elements || []),
     appState: {
       theme: theme,
       // Set theme-appropriate defaults
@@ -168,12 +215,12 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       const appState = excalidrawAPI.getAppState();
       const files = excalidrawAPI.getFiles();
 
-      // Clean elements to remove nested arrays for Firebase compatibility
-      const cleanedElements = cleanElementsForFirebase(elements);
+      // Transform elements for Firebase compatibility (nested arrays -> objects)
+      const transformedElements = transformElementsForFirebase(elements);
 
       await onSave(canvas.id, {
         title,
-        elements: cleanedElements,
+        elements: transformedElements,
         appState: {
           theme: theme,
           viewBackgroundColor: appState.viewBackgroundColor,
@@ -196,7 +243,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave, theme, cleanElementsForFirebase]);
+  }, [excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
 
   // Setup auto-save on changes
   useEffect(() => {
@@ -213,12 +260,12 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           const appState = excalidrawAPI.getAppState();
           const files = excalidrawAPI.getFiles();
 
-          // Clean elements to remove nested arrays for Firebase compatibility
-          const cleanedElements = cleanElementsForFirebase(elements);
+          // Transform elements for Firebase compatibility (nested arrays -> objects)
+          const transformedElements = transformElementsForFirebase(elements);
 
           await onSave(canvas.id, {
             title,
-            elements: cleanedElements,
+            elements: transformedElements,
             appState: {
               theme: theme,
               viewBackgroundColor: appState.viewBackgroundColor,
@@ -249,7 +296,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [hasChanges, excalidrawAPI, canvas, title, onSave, cleanElementsForFirebase]);
+  }, [hasChanges, excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
 
   // Handle keyboard shortcuts
   useEffect(() => {

@@ -81,73 +81,92 @@ export function useCanvases(projectId?: string) {
     }
   };
 
-  // Helper function to clean data for Firebase (removes undefined values and handles nested arrays)
-  const cleanForFirebase = (obj: any): any => {
+  // Transform data for Firebase (converts nested arrays to objects)
+  const transformForFirebase = (obj: any): any => {
     if (obj === null || obj === undefined) {
       return null;
     }
     
-    // Handle arrays - Firebase supports arrays but not nested arrays in certain contexts
     if (Array.isArray(obj)) {
-      return obj.map(cleanForFirebase);
+      // Check if this is a nested array that needs transformation
+      const hasNestedArrays = obj.some(item => Array.isArray(item));
+      
+      if (hasNestedArrays) {
+        // Transform nested arrays to objects
+        return obj.map(item => {
+          if (Array.isArray(item)) {
+            // Convert [x, y] to {x, y}
+            if (item.length === 2 && typeof item[0] === 'number' && typeof item[1] === 'number') {
+              return { x: item[0], y: item[1] };
+            }
+            // For other arrays, wrap in object
+            return { data: item };
+          }
+          return transformForFirebase(item);
+        });
+      }
+      
+      // Regular array, process items
+      return obj.map(transformForFirebase);
     }
     
-    // Handle objects
     if (typeof obj === 'object') {
-      const cleaned: any = {};
+      const transformed: any = {};
+      
       for (const [key, value] of Object.entries(obj)) {
-        if (value !== undefined) {
-          // Special handling for potentially problematic fields
-          if (key === 'points' && Array.isArray(value)) {
-            // Flatten points array - convert nested arrays to simple coordinate pairs
-            cleaned[key] = value.map(point => {
-              if (Array.isArray(point)) {
-                // Flatten [x, y] arrays to ensure no nesting - force to numbers
-                const x = typeof point[0] === 'number' ? point[0] : 0;
-                const y = typeof point[1] === 'number' ? point[1] : 0;
-                return [x, y];
+        if (value === undefined) continue;
+        
+        // Special handling for known nested array fields
+        if (key === 'points' && Array.isArray(value)) {
+          // Transform points [[x,y], [x,y]] to [{x, y}, {x, y}]
+          transformed[key] = value.map(point => {
+            if (Array.isArray(point) && point.length >= 2) {
+              return { x: point[0], y: point[1] };
+            }
+            return point;
+          });
+        } else if (key === 'scale' && Array.isArray(value) && value.length === 2) {
+          // Transform scale [x, y] to {x, y}
+          transformed[key] = { x: value[0], y: value[1] };
+        } else if (key === 'boundElements' && Array.isArray(value)) {
+          // Ensure boundElements are objects
+          transformed[key] = value
+            .filter(el => el != null)
+            .map(el => {
+              if (Array.isArray(el)) {
+                return { id: el[0], type: el[1] || 'arrow' };
               }
-              return point;
+              return transformForFirebase(el);
             });
-          } else if (key === 'boundElements' && Array.isArray(value)) {
-            // Clean bound elements array - flatten and remove nulls
-            cleaned[key] = value
-              .filter(el => el != null)
-              .map(el => {
-                if (typeof el === 'object' && !Array.isArray(el)) {
-                  return cleanForFirebase(el);
-                }
-                // If it's an array or primitive, handle carefully
-                return Array.isArray(el) ? null : el;
-              })
-              .filter(el => el != null);
-          } else if (key === 'groupIds' && Array.isArray(value)) {
-            // Ensure groupIds is a flat array of strings
-            cleaned[key] = value
-              .filter(id => typeof id === 'string' || typeof id === 'number')
-              .map(id => String(id));
-          } else if (Array.isArray(value)) {
-            // General array handling - aggressive flattening
-            cleaned[key] = value.map(item => {
+        } else if (key === 'groupIds' && Array.isArray(value)) {
+          // Keep groupIds as flat array of strings
+          transformed[key] = value
+            .filter(id => id != null)
+            .map(id => String(id));
+        } else if (Array.isArray(value)) {
+          // Check for nested arrays in any other field
+          const hasNestedArrays = value.some(item => Array.isArray(item));
+          
+          if (hasNestedArrays) {
+            console.warn(`🔧 Transforming nested array in ${key}`);
+            transformed[key] = value.map(item => {
               if (Array.isArray(item)) {
-                // Aggressive flattening - if it's a nested array, flatten it completely
-                console.warn(`🔧 Aggressively flattening nested array in ${key}:`, item);
-                const flattened = item.flat(Infinity); // Flatten to any depth
-                // If the flattened array has 2 elements and they're numbers, treat as coordinate
-                if (flattened.length === 2 && typeof flattened[0] === 'number' && typeof flattened[1] === 'number') {
-                  return flattened;
+                if (item.length === 2 && typeof item[0] === 'number' && typeof item[1] === 'number') {
+                  return { x: item[0], y: item[1] };
                 }
-                // Otherwise, convert to object or return first element
-                return flattened.length === 1 ? flattened[0] : { data: flattened };
+                return { data: item };
               }
-              return cleanForFirebase(item);
+              return transformForFirebase(item);
             });
           } else {
-            cleaned[key] = cleanForFirebase(value);
+            transformed[key] = value.map(transformForFirebase);
           }
+        } else {
+          transformed[key] = transformForFirebase(value);
         }
       }
-      return cleaned;
+      
+      return transformed;
     }
     
     return obj;
@@ -191,20 +210,20 @@ export function useCanvases(projectId?: string) {
         console.error('🚨 Full updates object:', JSON.stringify(updates, null, 2));
       }
       
-      // Clean data for Firebase compatibility
-      const cleanedUpdates = cleanForFirebase(updates);
+      // Transform data for Firebase compatibility (nested arrays to objects)
+      const transformedUpdates = transformForFirebase(updates);
       
-      console.log('🧹 Cleaned updates:', cleanedUpdates);
+      console.log('🧹 Transformed updates:', transformedUpdates);
       
-      // Check cleaned data for remaining nested arrays
-      const remainingNestedArrayPaths = findNestedArrays(cleanedUpdates);
+      // Check transformed data for remaining nested arrays
+      const remainingNestedArrayPaths = findNestedArrays(transformedUpdates);
       if (remainingNestedArrayPaths.length > 0) {
-        console.error('🚨 STILL HAVE nested arrays after cleaning at paths:', remainingNestedArrayPaths);
-        console.error('🚨 Cleaned updates with remaining nested arrays:', JSON.stringify(cleanedUpdates, null, 2));
+        console.error('🚨 STILL HAVE nested arrays after transformation at paths:', remainingNestedArrayPaths);
+        console.error('🚨 Transformed updates with remaining nested arrays:', JSON.stringify(transformedUpdates, null, 2));
       }
       
       await updateDoc(doc(db, 'canvases', canvasId), {
-        ...cleanedUpdates,
+        ...transformedUpdates,
         updatedAt: serverTimestamp(),
       });
       
