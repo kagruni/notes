@@ -87,6 +87,10 @@ export function validatePermissions(
   userId: string,
   canvas: {
     userId: string;
+    sharedWith?: string[];
+    permissions?: {
+      [userId: string]: any;
+    };
     collaborators?: Array<{
       userId: string;
       role: 'viewer' | 'editor' | 'admin';
@@ -103,7 +107,53 @@ export function validatePermissions(
     };
   }
   
-  // Check collaborator permissions
+  // Check if user is in sharedWith array (new structure)
+  if (canvas.sharedWith && canvas.sharedWith.includes(userId)) {
+    // Get permission from permissions map
+    const permission = canvas.permissions?.[userId];
+    let role: string;
+    
+    if (permission) {
+      // Handle both string and object permission structures
+      role = typeof permission === 'string' ? permission : permission.role;
+    } else {
+      // Default to viewer if in sharedWith but no specific permission
+      role = 'viewer';
+    }
+    
+    switch (role) {
+      case 'admin':
+        return {
+          canView: true,
+          canEdit: true,
+          canShare: true,
+          canDelete: false
+        };
+      case 'editor':
+        return {
+          canView: true,
+          canEdit: true,
+          canShare: false,
+          canDelete: false
+        };
+      case 'viewer':
+        return {
+          canView: true,
+          canEdit: false,
+          canShare: false,
+          canDelete: false
+        };
+      default:
+        return {
+          canView: true,
+          canEdit: false,
+          canShare: false,
+          canDelete: false
+        };
+    }
+  }
+  
+  // Check old collaborator structure for backward compatibility
   const collaborator = canvas.collaborators?.find(c => c.userId === userId);
   
   if (!collaborator) {

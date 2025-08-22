@@ -35,6 +35,16 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
   const [linkError, setLinkError] = useState<string | null>(null);
   const [collaborationEnabled, setCollaborationEnabled] = useState(canvas.collaborationEnabled || false);
 
+  // Debug logging
+  console.log('ShareModal render:', { 
+    canvasId: canvas.id, 
+    canvasTitle: canvas.title, 
+    canvasName: canvas.name,
+    isOpen,
+    collaborationEnabled,
+    fullCanvas: canvas
+  });
+
   const {
     collaborators,
     pendingInvites,
@@ -137,7 +147,7 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-[100001]" onClose={onClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"

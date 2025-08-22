@@ -109,11 +109,19 @@ export default function CollaboratorsList({
   const owner = getUserInfo(canvas.userId);
   
   // Get collaborators info
-  const collaborators = (canvas.sharedWith || []).map(userId => ({
-    userId,
-    ...getUserInfo(userId),
-    permission: canvas.permissions?.[userId]?.role || PermissionLevel.VIEWER
-  }));
+  const collaborators = (canvas.sharedWith || []).map(userId => {
+    const userPermission = canvas.permissions?.[userId];
+    const permission = userPermission && (
+      typeof userPermission === 'string' 
+        ? userPermission 
+        : userPermission.role
+    );
+    return {
+      userId,
+      ...getUserInfo(userId),
+      permission: permission || PermissionLevel.VIEWER
+    };
+  });
 
   const getPermissionBadgeColor = (role: PermissionLevel) => {
     switch (role) {

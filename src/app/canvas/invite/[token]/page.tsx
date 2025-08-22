@@ -42,7 +42,7 @@ export default function CanvasInviteTokenPage() {
       try {
         setStatus('loading');
         const canvas = await acceptInvite(token);
-        setCanvasInfo({ id: canvas.id, title: canvas.title });
+        setCanvasInfo({ id: canvas.id, title: canvas.title || canvas.name || 'Untitled Canvas' });
         setStatus('success');
         
         // Redirect to canvas after 2 seconds

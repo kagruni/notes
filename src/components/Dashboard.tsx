@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [activeTab, setActiveTab] = useState<'projects' | 'canvases'>('projects');
 
   const handleCreateProject = async (title: string, description?: string, color?: string) => {
     await createProject(title, description, color);
@@ -60,14 +61,81 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 mb-6 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+        <button
+          onClick={() => setActiveTab('projects')}
+          className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+            activeTab === 'projects'
+              ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          My Projects
+        </button>
+        <button
+          onClick={() => setActiveTab('canvases')}
+          className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+            activeTab === 'canvases'
+              ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+          }`}
+        >
+          Canvas & Collaboration
+        </button>
+      </div>
+
+      {activeTab === 'canvases' ? (
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Projects</h1>
-          <p className="text-gray-600 dark:text-gray-300 mt-1">
-            Organize your notes into projects
-          </p>
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Canvas & Collaboration</h1>
+            <p className="text-gray-600 dark:text-gray-300 mt-1">
+              Create and collaborate on visual canvases
+            </p>
+          </div>
+          
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <a
+              href="/canvas"
+              className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-shadow p-6 block"
+            >
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">My Canvases</h3>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                View and manage your own canvases
+              </p>
+            </a>
+            
+            <a
+              href="/shared-with-me"
+              className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-shadow p-6 block"
+            >
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Shared With Me</h3>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                View canvases others have shared with you
+              </p>
+            </a>
+            
+            <a
+              href="/my-canvases"
+              className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-shadow p-6 block"
+            >
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Share & Collaborate</h3>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                Share your canvases and manage collaborators
+              </p>
+            </a>
+          </div>
         </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Projects</h1>
+              <p className="text-gray-600 dark:text-gray-300 mt-1">
+                Organize your notes into projects
+              </p>
+            </div>
         
         <button
           onClick={() => setShowProjectModal(true)}
@@ -115,6 +183,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Project Modal */}
       <ProjectModal

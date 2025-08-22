@@ -50,31 +50,33 @@ export default function CollaborativeCursors({
 
   useEffect(() => {
     // Update cursor targets when users change
-    const newCursors = new Map<string, AnimatedCursor>();
-    const visible = visibleUsers();
-    
-    visible.forEach(user => {
-      if (user.cursor) {
-        const existing = cursors.get(user.userId);
-        if (existing) {
-          newCursors.set(user.userId, {
-            ...existing,
-            targetX: user.cursor.x,
-            targetY: user.cursor.y
-          });
-        } else {
-          newCursors.set(user.userId, {
-            x: user.cursor.x,
-            y: user.cursor.y,
-            targetX: user.cursor.x,
-            targetY: user.cursor.y
-          });
+    setCursors(prevCursors => {
+      const newCursors = new Map<string, AnimatedCursor>();
+      const visible = visibleUsers();
+      
+      visible.forEach(user => {
+        if (user.cursor) {
+          const existing = prevCursors.get(user.userId);
+          if (existing) {
+            newCursors.set(user.userId, {
+              ...existing,
+              targetX: user.cursor.x,
+              targetY: user.cursor.y
+            });
+          } else {
+            newCursors.set(user.userId, {
+              x: user.cursor.x,
+              y: user.cursor.y,
+              targetX: user.cursor.x,
+              targetY: user.cursor.y
+            });
+          }
         }
-      }
+      });
+      
+      return newCursors;
     });
-
-    setCursors(newCursors);
-  }, [users, visibleUsers]);
+  }, [users, viewportBounds, viewportOffset, zoom, visibleUsers]);
 
   useEffect(() => {
     // Smooth cursor animation using requestAnimationFrame

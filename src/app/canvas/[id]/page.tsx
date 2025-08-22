@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import CanvasEditor from '@/components/canvas/CanvasEditor';
+import CanvasEditorAdapter from '@/components/canvas/CanvasEditorAdapter';
 import CollaborationIndicator from '@/components/canvas/CollaborationIndicator';
 import ShareButton from '@/components/canvas/ShareButton';
 import { collaborationService } from '@/services/collaborationService';
@@ -215,7 +215,7 @@ export default function CanvasPage() {
 
       {/* Canvas editor */}
       <div className="pt-14 h-screen">
-        <CanvasEditor
+        <CanvasEditorAdapter
           canvasId={canvasId}
           readOnly={!permissions.canEdit}
           collaborationEnabled={true}
