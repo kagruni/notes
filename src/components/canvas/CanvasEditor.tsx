@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
 import { Canvas } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePreBundledLibraries } from '@/hooks/usePreBundledLibraries';
 import { usePresence } from '@/hooks/usePresence';
@@ -12,6 +13,7 @@ import ShareButton from './ShareButton';
 import CollaborativeCursors from './CollaborativeCursors';
 import CursorChat from './CursorChat';
 import CollaboratorsList from './CollaboratorsList';
+import RTDBTest from './RTDBTest';
 import { X, Save, Users, Wifi, WifiOff } from 'lucide-react';
 import { 
   detectChanges, 
@@ -44,6 +46,7 @@ interface CanvasEditorProps {
 }
 
 export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: CanvasEditorProps) {
+  const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { getExcalidrawLibraryItems, loading: librariesLoading, error: librariesError } = usePreBundledLibraries();
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
@@ -54,6 +57,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastElements = useRef<any[]>([]);
   const isApplyingRemoteOp = useRef(false);
+  const pendingRemoteOps = useRef<CanvasOperation[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Collaboration state
@@ -90,14 +94,33 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     enabled: collaborationEnabled && isOpen && !!canvas,
     callbacks: {
       onRemoteOperation: (operation) => {
-        if (!excalidrawAPI || isApplyingRemoteOp.current) return;
+        console.log('[CanvasEditor] onRemoteOperation called:', {
+          hasAPI: !!excalidrawAPI,
+          isApplying: isApplyingRemoteOp.current,
+          operationType: operation.type
+        });
         
-        console.log('Applying remote operation:', operation.type);
+        if (!excalidrawAPI) {
+          console.warn('[CanvasEditor] No Excalidraw API available yet, queueing operation');
+          pendingRemoteOps.current.push(operation);
+          return;
+        }
+        
+        if (isApplyingRemoteOp.current) {
+          console.warn('[CanvasEditor] Already applying remote op, queueing');
+          pendingRemoteOps.current.push(operation);
+          return;
+        }
+        
+        console.log('[CanvasEditor] Applying remote operation:', operation.type);
         isApplyingRemoteOp.current = true;
         
         try {
           const currentElements = excalidrawAPI.getSceneElements();
+          // console.log('[CanvasEditor] Current elements:', currentElements.length);
+          
           const updatedElements = applyOperation(currentElements, operation);
+          // console.log('[CanvasEditor] Updated elements:', updatedElements.length);
           
           // Update Excalidraw with remote changes
           excalidrawAPI.updateScene({
@@ -105,8 +128,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           });
           
           lastElements.current = updatedElements;
+          // console.log('[CanvasEditor] Successfully applied remote operation');
         } catch (error) {
-          console.error('Failed to apply remote operation:', error);
+          console.error('[CanvasEditor] Failed to apply remote operation:', error);
         } finally {
           isApplyingRemoteOp.current = false;
         }
@@ -118,6 +142,34 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     setMounted(true);
     return () => setMounted(false);
   }, []);
+
+  // Process pending remote operations when API becomes available
+  useEffect(() => {
+    if (excalidrawAPI && pendingRemoteOps.current.length > 0) {
+      console.log('[CanvasEditor] Processing', pendingRemoteOps.current.length, 'pending remote operations');
+      const ops = [...pendingRemoteOps.current];
+      pendingRemoteOps.current = [];
+      
+      ops.forEach(operation => {
+        if (!isApplyingRemoteOp.current) {
+          isApplyingRemoteOp.current = true;
+          try {
+            const currentElements = excalidrawAPI.getSceneElements();
+            const updatedElements = applyOperation(currentElements, operation);
+            excalidrawAPI.updateScene({
+              elements: updatedElements
+            });
+            lastElements.current = updatedElements;
+            console.log('[CanvasEditor] Applied pending operation:', operation.type);
+          } catch (error) {
+            console.error('[CanvasEditor] Failed to apply pending operation:', error);
+          } finally {
+            isApplyingRemoteOp.current = false;
+          }
+        }
+      });
+    }
+  }, [excalidrawAPI]);
 
   useEffect(() => {
     if (canvas) {
@@ -298,10 +350,17 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       // Transform elements for Firebase compatibility (nested arrays -> objects)
       const transformedElements = transformElementsForFirebase(elements);
 
-      await onSave(canvas.id, {
+      // When collaboration is enabled, don't save elements to Firestore
+      // They are being synced through RTDB operations instead
+      const saveData: any = {
         title,
-        elements: transformedElements,
-        appState: {
+      };
+
+      // Always save elements, but when collaboration is enabled, 
+      // this is just a snapshot - real-time sync happens through RTDB
+      saveData.elements = transformedElements;
+
+      saveData.appState = {
           theme: theme,
           viewBackgroundColor: appState.viewBackgroundColor,
           currentItemFontFamily: appState.currentItemFontFamily,
@@ -315,15 +374,17 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           zoom: appState.zoom,
           scrollX: appState.scrollX,
           scrollY: appState.scrollY,
-        },
-        files: files || {}
-      });
+        };
+        
+      saveData.files = files || {};
+
+      await onSave(canvas.id, saveData);
       
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
+  }, [excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase, collaborationEnabled]);
 
   // Setup auto-save on changes
   useEffect(() => {
@@ -332,6 +393,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         clearTimeout(autoSaveTimeout.current);
       }
       
+      // Use longer delay for collaboration mode to avoid conflicts
+      const delay = collaborationEnabled ? 10000 : 2000; // 10s for collab, 2s for solo
       autoSaveTimeout.current = setTimeout(async () => {
         if (!excalidrawAPI || !canvas) return;
 
@@ -343,10 +406,16 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           // Transform elements for Firebase compatibility (nested arrays -> objects)
           const transformedElements = transformElementsForFirebase(elements);
 
-          await onSave(canvas.id, {
+          // When collaboration is enabled, don't save elements to Firestore
+          const saveData: any = {
             title,
-            elements: transformedElements,
-            appState: {
+          };
+
+          // Always save elements, but when collaboration is enabled, 
+          // this is just a snapshot - real-time sync happens through RTDB
+          saveData.elements = transformedElements;
+
+          saveData.appState = {
               theme: theme,
               viewBackgroundColor: appState.viewBackgroundColor,
               currentItemFontFamily: appState.currentItemFontFamily,
@@ -360,15 +429,17 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               zoom: appState.zoom,
               scrollX: appState.scrollX,
               scrollY: appState.scrollY,
-            },
-            files: files || {}
-          });
+            };
+            
+          saveData.files = files || {};
+
+          await onSave(canvas.id, saveData);
           
           setHasChanges(false);
         } catch (error) {
           console.error('Failed to auto-save canvas:', error);
         }
-      }, 1000);
+      }, delay);
     }
     
     return () => {
@@ -376,7 +447,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [hasChanges, excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
+  }, [hasChanges, excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase, collaborationEnabled]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -578,19 +649,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             placeholder="Canvas Title"
           />
           
-          {/* Save Status */}
-          {hasChanges && (
-            <span style={{ 
-              fontSize: '12px', 
-              color: theme === 'dark' ? '#9ca3af' : '#6b7280',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}>
-              <Save className="w-3 h-3" />
-              Saving...
-            </span>
-          )}
+          {/* Save Status - Hidden to avoid clutter */}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -760,6 +819,14 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           libraryItems={preBundledLibraries}
           theme={theme}
           onChange={(elements, appState) => {
+            console.log('[CanvasEditor] onChange called:', {
+              elementCount: elements.length,
+              collaborationEnabled,
+              operationsInitialized,
+              isApplyingRemote: isApplyingRemoteOp.current,
+              sceneVersion: sceneVersion.current
+            });
+            
             // Check if theme changed in Excalidraw and sync with our app
             if (appState.theme && appState.theme !== theme) {
               console.log('Theme changed in Excalidraw:', appState.theme, 'current app theme:', theme);
@@ -767,21 +834,51 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             }
             
             // Don't process if we're applying remote operations
-            if (isApplyingRemoteOp.current) return;
+            if (isApplyingRemoteOp.current) {
+              console.log('[CanvasEditor] Skipping onChange - applying remote op');
+              return;
+            }
+            
+            // Initialize lastElements on first change if not set
+            if (!lastElements.current || lastElements.current.length === 0) {
+              console.log('[CanvasEditor] Initializing lastElements with', elements.length, 'elements');
+              lastElements.current = [...elements];
+              sceneVersion.current = 1;
+              return;
+            }
             
             // Track scene version to detect real changes
             sceneVersion.current = sceneVersion.current + 1;
             
             // Detect and queue operations for collaboration
-            if (collaborationEnabled && operationsInitialized && sceneVersion.current > 1) {
+            if (collaborationEnabled && operationsInitialized) {
               const changes = detectChanges(lastElements.current, elements);
-              const operations = changesToOperations(changes);
               
-              operations.forEach(op => {
-                queueOperation(op.type, op.elementIds, op.data);
-              });
+              if (changes.added.length > 0 || changes.updated.length > 0 || changes.deleted.length > 0) {
+                console.log('[CanvasEditor] Detected changes:', {
+                  added: changes.added.length,
+                  updated: changes.updated.length,
+                  deleted: changes.deleted.length,
+                  collaborationEnabled,
+                  operationsInitialized
+                });
+                
+                const operations = changesToOperations(changes);
+                
+                if (operations.length > 0) {
+                  console.log('[CanvasEditor] Queueing', operations.length, 'operations');
+                  operations.forEach(op => {
+                    queueOperation(op.type, op.elementIds, op.data);
+                  });
+                }
+              }
               
               lastElements.current = [...elements];
+            } else if (collaborationEnabled) {
+              console.log('[CanvasEditor] Skipping - not initialized:', {
+                collaborationEnabled,
+                operationsInitialized
+              });
             }
             
             // Only mark as changed after initial setup (version > 1)
@@ -796,10 +893,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           }}
           excalidrawAPI={(api: any) => {
             setExcalidrawAPI(api);
-            // Initialize last elements for collaboration
-            if (api) {
-              lastElements.current = api.getSceneElements() || [];
-            }
+            // Don't initialize lastElements here - wait for first onChange
+            // to get the actual loaded elements
             // Try to load libraries using the API
             if (api && preBundledLibraries.length > 0) {
               console.log('🔧 Attempting to load libraries via excalidrawAPI:', preBundledLibraries.length);
@@ -839,6 +934,11 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           }}
         />
       </div>
+
+      {/* RTDB Test Component - Show when collaboration is enabled */}
+      {collaborationEnabled && user?.uid && (
+        <RTDBTest canvasId={canvas?.id || ''} userId={user.uid} />
+      )}
 
       {/* Minimal close button */}
       <button

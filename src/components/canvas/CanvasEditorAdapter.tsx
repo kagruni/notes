@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Canvas } from '@/types';
 import CanvasEditor from './CanvasEditor';
+import CanvasErrorBoundary from './CanvasErrorBoundary';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -24,28 +25,53 @@ export default function CanvasEditorAdapter({
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(true);
 
-  // Load canvas data
+  // Load canvas data - only once for initial load when collaboration is enabled
   useEffect(() => {
     if (!canvasId) return;
 
     const canvasRef = doc(db, 'canvases', canvasId);
-    const unsubscribe = onSnapshot(canvasRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
-        setCanvas(data);
+    
+    // For collaborative canvases, we only need the initial load
+    // Real-time sync happens through RTDB operations
+    if (collaborationEnabled) {
+      // Just get the canvas once
+      const loadCanvas = async () => {
+        try {
+          const snapshot = await getDoc(canvasRef);
+          if (snapshot.exists()) {
+            const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
+            setCanvas(data);
+          } else {
+            toast.error('Canvas not found');
+          }
+        } catch (error) {
+          console.error('Error loading canvas:', error);
+          toast.error('Failed to load canvas');
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadCanvas();
+    } else {
+      // For non-collaborative canvases, listen for updates
+      const unsubscribe = onSnapshot(canvasRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
+          setCanvas(data);
+          setLoading(false);
+        } else {
+          toast.error('Canvas not found');
+          setLoading(false);
+        }
+      }, (error) => {
+        console.error('Error loading canvas:', error);
+        toast.error('Failed to load canvas');
         setLoading(false);
-      } else {
-        toast.error('Canvas not found');
-        setLoading(false);
-      }
-    }, (error) => {
-      console.error('Error loading canvas:', error);
-      toast.error('Failed to load canvas');
-      setLoading(false);
-    });
+      });
 
-    return () => unsubscribe();
-  }, [canvasId]);
+      return () => unsubscribe();
+    }
+  }, [canvasId, collaborationEnabled]);
 
   const handleSave = async (id: string, updates: Partial<Canvas>) => {
     if (readOnly || !user) return;
@@ -85,15 +111,30 @@ export default function CanvasEditorAdapter({
     );
   }
 
+  // Pass collaboration flag through canvas object
+  const canvasWithCollaboration = {
+    ...canvas,
+    collaborationEnabled: collaborationEnabled
+  };
+  
+  console.log('[CanvasEditorAdapter] Canvas collaboration status:', {
+    canvasId: canvas.id,
+    collaborationEnabled: collaborationEnabled,
+    canvasHasCollab: canvas.collaborationEnabled,
+    passedCollab: canvasWithCollaboration.collaborationEnabled
+  });
+
   // CanvasEditor expects isOpen to be true to render
   return (
     <div className="w-full h-full">
-      <CanvasEditor
-        canvas={canvas}
-        isOpen={isOpen}
-        onSave={handleSave}
-        onClose={handleClose}
-      />
+      <CanvasErrorBoundary>
+        <CanvasEditor
+          canvas={canvasWithCollaboration}
+          isOpen={isOpen}
+          onSave={handleSave}
+          onClose={handleClose}
+        />
+      </CanvasErrorBoundary>
     </div>
   );
 }

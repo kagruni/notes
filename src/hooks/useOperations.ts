@@ -17,12 +17,26 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
   const initRef = useRef(false);
 
   useEffect(() => {
-    if (!user || !canvasId || !enabled || initRef.current) return;
+    console.log('[useOperations] Hook check:', {
+      hasUser: !!user,
+      userId: user?.uid,
+      canvasId: canvasId,
+      enabled: enabled
+    });
+    
+    if (!user || !canvasId || !enabled) {
+      console.log('[useOperations] Skipping init - missing requirements:', {
+        user: !!user,
+        canvasId: !!canvasId,
+        enabled
+      });
+      return;
+    }
+
+    console.log('[useOperations] Initializing operations for canvas:', canvasId, 'user:', user.uid);
 
     const initOperations = async () => {
       try {
-        initRef.current = true;
-        
         await operationsService.initializeOperations(
           canvasId,
           user.uid,
@@ -35,9 +49,10 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
           }
         );
 
+        console.log('[useOperations] Operations initialized successfully for canvas:', canvasId);
         setIsInitialized(true);
       } catch (error) {
-        console.error('Failed to initialize operations:', error);
+        console.error('[useOperations] Failed to initialize operations:', error);
         setIsInitialized(false);
       }
     };
@@ -45,12 +60,10 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
     initOperations();
 
     return () => {
-      if (initRef.current) {
-        operationsService.cleanup().catch(console.error);
-        initRef.current = false;
-        setIsInitialized(false);
-        setIsSyncing(false);
-      }
+      console.log('[useOperations] Cleaning up operations for canvas:', canvasId);
+      operationsService.cleanup().catch(console.error);
+      setIsInitialized(false);
+      setIsSyncing(false);
     };
   }, [user, canvasId, enabled]); // Remove callbacks from dependencies
 
@@ -59,8 +72,12 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
     elementIds: string[],
     data: any
   ) => {
-    if (!isInitialized) return;
+    if (!isInitialized) {
+      console.warn('[useOperations] Cannot queue operation - not initialized');
+      return;
+    }
 
+    console.log('[useOperations] Queueing operation:', { type, elementIds: elementIds.length });
     await operationsService.queueOperation({
       type,
       elementIds,

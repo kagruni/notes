@@ -78,6 +78,14 @@ export async function shareCanvas(
     expiresAt: Timestamp.fromDate(expiresAt)
   });
 
+  // Enable collaboration on the canvas when first shared
+  if (!canvas.collaborationEnabled) {
+    await updateDoc(canvasRef, {
+      collaborationEnabled: true,
+      updatedAt: serverTimestamp()
+    });
+  }
+
   return {
     ...invite,
     id: inviteRef.id

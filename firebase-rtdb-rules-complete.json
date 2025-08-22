@@ -1,0 +1,40 @@
+{
+  "rules": {
+    "canvas-operations": {
+      "$canvasId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["timestamp"],
+        "$operationId": {
+          ".validate": "newData.hasChildren(['type', 'elementIds', 'data', 'userId', 'timestamp', 'clientId'])"
+        }
+      }
+    },
+    "presence": {
+      "$canvasId": {
+        "$userId": {
+          ".read": "auth != null",
+          ".write": "$userId === auth.uid"
+        }
+      }
+    },
+    "test-operations": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "cursors": {
+      "$canvasId": {
+        "$userId": {
+          ".read": "auth != null",
+          ".write": "$userId === auth.uid"
+        }
+      }
+    },
+    "collaboration": {
+      "$canvasId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

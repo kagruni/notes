@@ -63,6 +63,28 @@ function hasElementChanged(oldEl: ExcalidrawElement, newEl: ExcalidrawElement): 
 }
 
 /**
+ * Clean element data for Firebase (remove undefined values)
+ */
+function cleanElementForFirebase(element: any): any {
+  if (element === undefined) return null;
+  if (element === null) return null;
+  if (typeof element !== 'object') return element;
+  
+  if (Array.isArray(element)) {
+    return element.map(item => cleanElementForFirebase(item));
+  }
+  
+  const cleaned: any = {};
+  for (const key in element) {
+    const value = element[key];
+    if (value !== undefined) {
+      cleaned[key] = cleanElementForFirebase(value);
+    }
+  }
+  return cleaned;
+}
+
+/**
  * Converts Excalidraw changes to canvas operations
  */
 export function changesToOperations(changes: ExcalidrawChange): CanvasOperation[] {
@@ -72,7 +94,7 @@ export function changesToOperations(changes: ExcalidrawChange): CanvasOperation[
     operations.push({
       type: 'add',
       elementIds: changes.added.map(el => el.id),
-      data: { elements: changes.added }
+      data: { elements: changes.added.map(el => cleanElementForFirebase(el)) }
     });
   }
 
@@ -80,7 +102,7 @@ export function changesToOperations(changes: ExcalidrawChange): CanvasOperation[
     operations.push({
       type: 'update',
       elementIds: changes.updated.map(el => el.id),
-      data: { elements: changes.updated }
+      data: { elements: changes.updated.map(el => cleanElementForFirebase(el)) }
     });
   }
 

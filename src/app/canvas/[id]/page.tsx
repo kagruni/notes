@@ -65,15 +65,30 @@ export default function CanvasPage() {
 
         setCanvas(canvasData);
 
-        // Start collaboration session
-        await collaborationService.startSession(
-          canvasId,
-          user.uid,
-          {
-            name: user.displayName || 'Anonymous',
-            email: user.email || ''
-          }
-        );
+        // Only start collaboration if enabled for this canvas
+        let collaborationUnsub: (() => void) | null = null;
+        
+        if (canvasData.collaborationEnabled) {
+          // Start collaboration session
+          await collaborationService.startSession(
+            canvasId,
+            user.uid,
+            {
+              name: user.displayName || 'Anonymous',
+              email: user.email || ''
+            }
+          );
+
+          // Subscribe to collaboration updates
+          collaborationUnsub = collaborationService.subscribeToCanvas(
+            canvasId,
+            {
+              onStateChange: (state) => {
+                setCollaborationState(state);
+              }
+            }
+          );
+        }
 
         // Subscribe to real-time updates
         unsubscribe = onSnapshot(canvasRef, (snapshot) => {
@@ -87,20 +102,10 @@ export default function CanvasPage() {
           }
         });
 
-        // Subscribe to collaboration updates
-        const collaborationUnsub = collaborationService.subscribeToCanvas(
-          canvasId,
-          {
-            onStateChange: (state) => {
-              setCollaborationState(state);
-            }
-          }
-        );
-
         // Store unsubscribe functions
         const cleanup = () => {
           if (unsubscribe) unsubscribe();
-          collaborationUnsub();
+          if (collaborationUnsub) collaborationUnsub();
         };
 
         // Set up cleanup on unmount
@@ -118,7 +123,7 @@ export default function CanvasPage() {
 
     // Cleanup on unmount
     return () => {
-      if (user && canvasId) {
+      if (user && canvasId && canvas?.collaborationEnabled) {
         collaborationService.endSession(canvasId, user.uid).catch(console.error);
       }
     };
@@ -127,7 +132,7 @@ export default function CanvasPage() {
   // Handle visibility change to update presence
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!user || !canvasId) return;
+      if (!user || !canvasId || !canvas?.collaborationEnabled) return;
 
       if (document.hidden) {
         // User switched tabs/minimized window
@@ -149,7 +154,7 @@ export default function CanvasPage() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user, canvasId]);
+  }, [user, canvasId, canvas?.collaborationEnabled]);
 
   if (loading) {
     return (
@@ -200,10 +205,12 @@ export default function CanvasPage() {
             <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
               {canvas.name}
             </h1>
-            <CollaborationIndicator
-              isConnected={collaborationState.isConnected}
-              activeUsers={collaborationState.activeUsers}
-            />
+            {canvas.collaborationEnabled && (
+              <CollaborationIndicator
+                isConnected={collaborationState.isConnected}
+                activeUsers={collaborationState.activeUsers}
+              />
+            )}
           </div>
           <div className="flex items-center gap-2">
             {permissions.canShare && (
@@ -218,7 +225,7 @@ export default function CanvasPage() {
         <CanvasEditorAdapter
           canvasId={canvasId}
           readOnly={!permissions.canEdit}
-          collaborationEnabled={true}
+          collaborationEnabled={canvas.collaborationEnabled || false}
         />
       </div>
     </div>

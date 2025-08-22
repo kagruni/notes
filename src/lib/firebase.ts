@@ -12,7 +12,9 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'demo-project.appspot.com',
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '123456789',
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:123456789:web:demo',
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || 'https://demo-project.firebaseio.com',
+  // Use the Europe West 1 database URL
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || 
+    'https://notes-3f20c-default-rtdb.europe-west1.firebasedatabase.app',
 };
 
 // Initialize Firebase
@@ -23,5 +25,10 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const rtdb = getDatabase(app);
+
+// Log RTDB configuration for debugging
+if (typeof window !== 'undefined') {
+  console.log('[Firebase] Realtime Database initialized with URL:', firebaseConfig.databaseURL);
+}
 
 export default app; 

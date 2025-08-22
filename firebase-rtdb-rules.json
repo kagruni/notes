@@ -1,0 +1,48 @@
+{
+  "rules": {
+    // Allow authenticated users to read/write canvas operations for canvases they have access to
+    "canvas-operations": {
+      "$canvasId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "$operationId": {
+          ".validate": "newData.hasChildren(['type', 'elementIds', 'data', 'userId', 'timestamp', 'clientId'])"
+        }
+      }
+    },
+    
+    // Allow authenticated users to read/write presence data
+    "presence": {
+      "$canvasId": {
+        "$userId": {
+          ".read": "auth != null",
+          ".write": "$userId === auth.uid"
+        }
+      }
+    },
+    
+    // Test location for debugging
+    "test-operations": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    
+    // Cursor positions for collaboration
+    "cursors": {
+      "$canvasId": {
+        "$userId": {
+          ".read": "auth != null",
+          ".write": "$userId === auth.uid"
+        }
+      }
+    },
+    
+    // Collaboration state
+    "collaboration": {
+      "$canvasId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}
