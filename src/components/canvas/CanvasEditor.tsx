@@ -21,13 +21,7 @@ const ExcalidrawComponent = dynamic(
   }
 );
 
-// Import exportToBlob for thumbnail generation
-let exportToBlob: any = null;
-if (typeof window !== 'undefined') {
-  import('@excalidraw/excalidraw').then((module) => {
-    exportToBlob = module.exportToBlob;
-  });
-}
+// No additional imports needed for thumbnail generation
 
 interface CanvasEditorProps {
   canvas: Canvas | null;
@@ -214,75 +208,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     libraryItems: preBundledLibraries
   };
 
-  // Generate thumbnail from canvas
-  const generateThumbnail = useCallback(async (elements: any[], appState: any, files: any) => {
-    if (!exportToBlob || !elements || elements.length === 0) return null;
-
-    try {
-      // Calculate bounding box of all elements for better framing
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      
-      elements.forEach((element: any) => {
-        if (element.isDeleted) return;
-        
-        const x = element.x || 0;
-        const y = element.y || 0;
-        const width = element.width || 0;
-        const height = element.height || 0;
-        
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x + width);
-        maxY = Math.max(maxY, y + height);
-      });
-      
-      // Add some padding
-      const padding = 20;
-      minX -= padding;
-      minY -= padding;
-      maxX += padding;
-      maxY += padding;
-      
-      const contentWidth = maxX - minX;
-      const contentHeight = maxY - minY;
-      
-      // Generate a small thumbnail image with proper viewbox
-      const blob = await exportToBlob({
-        elements,
-        appState: {
-          ...appState,
-          exportWithDarkMode: theme === 'dark',
-          exportBackground: true,
-          viewBackgroundColor: appState.viewBackgroundColor || (theme === 'dark' ? '#1e1e1e' : '#ffffff'),
-          scrollX: -minX,
-          scrollY: -minY,
-        },
-        files,
-        getDimensions: () => {
-          // Maintain aspect ratio
-          const maxWidth = 400;
-          const maxHeight = 300;
-          const scale = Math.min(maxWidth / contentWidth, maxHeight / contentHeight, 1);
-          
-          return { 
-            width: Math.min(contentWidth * scale, maxWidth), 
-            height: Math.min(contentHeight * scale, maxHeight),
-            scale: scale
-          };
-        },
-      });
-
-      // Convert blob to base64 data URL
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    } catch (error) {
-      console.error('Failed to generate thumbnail:', error);
-      return null;
-    }
-  }, [theme]);
+  // No thumbnail generation needed - we render live previews from elements
 
   // Auto-save functionality
   const handleAutoSave = useCallback(async () => {
@@ -295,9 +221,6 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
 
       // Transform elements for Firebase compatibility (nested arrays -> objects)
       const transformedElements = transformElementsForFirebase(elements);
-
-      // Generate thumbnail
-      const thumbnail = await generateThumbnail(elements, appState, files);
 
       await onSave(canvas.id, {
         title,
@@ -317,15 +240,14 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           scrollX: appState.scrollX,
           scrollY: appState.scrollY,
         },
-        files: files || {},
-        ...(thumbnail && { thumbnail })
+        files: files || {}
       });
       
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to auto-save canvas:', error);
     }
-  }, [excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase, generateThumbnail]);
+  }, [excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
 
   // Setup auto-save on changes
   useEffect(() => {
@@ -345,9 +267,6 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           // Transform elements for Firebase compatibility (nested arrays -> objects)
           const transformedElements = transformElementsForFirebase(elements);
 
-          // Generate thumbnail
-          const thumbnail = await generateThumbnail(elements, appState, files);
-
           await onSave(canvas.id, {
             title,
             elements: transformedElements,
@@ -366,8 +285,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               scrollX: appState.scrollX,
               scrollY: appState.scrollY,
             },
-            files: files || {},
-            ...(thumbnail && { thumbnail })
+            files: files || {}
           });
           
           setHasChanges(false);
@@ -382,7 +300,7 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [hasChanges, excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase, generateThumbnail]);
+  }, [hasChanges, excalidrawAPI, canvas, title, onSave, theme, transformElementsForFirebase]);
 
   // Handle keyboard shortcuts
   useEffect(() => {

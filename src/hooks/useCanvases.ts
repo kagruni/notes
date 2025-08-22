@@ -38,12 +38,38 @@ export function useCanvases(projectId?: string) {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const canvasesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date(),
-          updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-        })) as Canvas[];
+        const canvasesData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          
+          // Transform elements back from Firebase format if needed
+          if (data.elements && Array.isArray(data.elements)) {
+            data.elements = data.elements.map((element: any) => {
+              // Transform points back from {x, y} to [x, y] if needed
+              if (element.points && Array.isArray(element.points)) {
+                element.points = element.points.map((point: any) => {
+                  if (point && typeof point === 'object' && 'x' in point && 'y' in point) {
+                    return [point.x, point.y];
+                  }
+                  return point;
+                });
+              }
+              
+              // Transform scale back from {x, y} to [x, y] if needed
+              if (element.scale && typeof element.scale === 'object' && 'x' in element.scale && 'y' in element.scale) {
+                element.scale = [element.scale.x, element.scale.y];
+              }
+              
+              return element;
+            });
+          }
+          
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+          };
+        }) as Canvas[];
         
         setCanvases(canvasesData);
         setLoading(false);

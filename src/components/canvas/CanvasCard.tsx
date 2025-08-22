@@ -2,6 +2,7 @@
 
 import { Canvas } from '@/types';
 import { PenTool, Trash2, Edit3, Maximize2 } from 'lucide-react';
+import TestPreview from './TestPreview';
 
 interface CanvasCardProps {
   canvas: Canvas;
@@ -55,24 +56,11 @@ export default function CanvasCard({ canvas, onOpen, onDelete, onRename }: Canva
       onClick={handleOpen}
     >
       {/* Canvas Preview Area */}
-      <div className="h-48 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 relative flex items-center justify-center overflow-hidden">
-        {canvas.thumbnail ? (
-          <img 
-            src={canvas.thumbnail} 
-            alt={canvas.title}
-            className="w-full h-full object-contain"
-          />
-        ) : (
-          <div className="text-center">
-            <PenTool className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-2" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {elementCount > 0 ? `${elementCount} elements` : 'Empty canvas'}
-            </p>
-          </div>
-        )}
+      <div className="h-48 relative overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
+        <TestPreview canvas={canvas} />
         
         {/* Hover Overlay */}
-        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-opacity duration-200 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors duration-200 flex items-center justify-center pointer-events-none group-hover:pointer-events-auto">
           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <Maximize2 className="w-8 h-8 text-white" />
           </div>
