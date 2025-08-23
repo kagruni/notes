@@ -76,17 +76,26 @@ class OperationsService {
       currentCanvasId: this.currentCanvasId,
       currentUserId: this.currentUserId,
       hasRef: !!this.operationsRef,
+      hasCallbacks: !!callbacks,
+      hasExistingCallbacks: !!this.callbacks.onRemoteOperation,
       willInitialize: this.currentCanvasId !== canvasId || this.currentUserId !== userId
     });
+    
+    // Always update callbacks if provided, merging with existing ones
+    if (callbacks) {
+      this.callbacks = {
+        ...this.callbacks,
+        ...callbacks
+      };
+      console.log('[OperationsService] Updated callbacks, has onRemoteOperation:', !!this.callbacks.onRemoteOperation);
+    }
     
     // Check if already properly initialized for this canvas and user
     if (this.currentCanvasId === canvasId && 
         this.currentUserId === userId && 
         this.operationsRef) {
-      console.log('[OperationsService] Already initialized for this canvas and user, updating callbacks');
-      // Update callbacks even if already initialized
-      this.callbacks = callbacks || {};
-      return; // Already initialized
+      console.log('[OperationsService] Already initialized for this canvas and user, callbacks updated');
+      return; // Already initialized but callbacks are updated above
     }
 
     // Clean up previous operations if switching canvases
@@ -168,12 +177,15 @@ class OperationsService {
           this.callbacks.onRemoteOperation?.(resolved);
         }
       } else {
-        console.log('[OperationsService] 📤 Calling onRemoteOperation callback');
         if (this.callbacks.onRemoteOperation) {
+          console.log('[OperationsService] Calling onRemoteOperation callback');
           this.callbacks.onRemoteOperation(operation);
-          console.log('[OperationsService] ✅ Callback executed');
         } else {
-          console.error('[OperationsService] ❌ No onRemoteOperation callback!');
+          console.warn('[OperationsService] No onRemoteOperation callback available', {
+            hasCallbacks: !!this.callbacks,
+            callbackKeys: Object.keys(this.callbacks || {}),
+            isInitialized: this.isInitialized()
+          });
         }
       }
 
@@ -260,31 +272,13 @@ class OperationsService {
   }
 
   async queueOperation(operation: Omit<CanvasOperation, 'userId' | 'clientId' | 'timestamp'>) {
-    console.log('[OperationsService] queueOperation called:', {
-      hasUserId: !!this.currentUserId,
-      currentUserId: this.currentUserId,
-      hasCanvasId: !!this.currentCanvasId,
-      currentCanvasId: this.currentCanvasId,
-      hasRef: !!this.operationsRef,
-      operationType: operation.type
-    });
-    
     if (!this.currentUserId) {
-      console.error('[OperationsService] ❌ Cannot queue operation: no user ID (service not initialized)');
-      console.log('[OperationsService] Service state:', {
-        currentCanvasId: this.currentCanvasId,
-        currentUserId: this.currentUserId,
-        hasRef: !!this.operationsRef,
-        isOnline: this.isOnline
-      });
+      console.warn('[OperationsService] Cannot queue operation: no user ID (service not initialized)');
       return;
     }
     
     if (!this.currentCanvasId || !this.operationsRef) {
-      console.error('[OperationsService] ❌ Cannot queue operation: missing canvas or ref', {
-        canvasId: this.currentCanvasId,
-        hasRef: !!this.operationsRef
-      });
+      console.warn('[OperationsService] Cannot queue operation: missing canvas or ref');
       return;
     }
 
@@ -415,9 +409,24 @@ class OperationsService {
            this.operationQueue.length === 0 && 
            this.offlineQueue.length === 0;
   }
+  
+  isInitialized(): boolean {
+    return !!(this.currentUserId && this.currentCanvasId && this.operationsRef);
+  }
+  
+  updateCallbacks(callbacks: OperationCallbacks) {
+    console.log('[OperationsService] updateCallbacks called, has onRemoteOperation:', !!callbacks.onRemoteOperation);
+    this.callbacks = {
+      ...this.callbacks,
+      ...callbacks
+    };
+  }
 
   async cleanup() {
-    console.log('[OperationsService] Cleanup called for canvas:', this.currentCanvasId);
+    console.log('[OperationsService] Cleanup called for canvas:', this.currentCanvasId, {
+      hasCallbacks: !!this.callbacks.onRemoteOperation,
+      isInitialized: this.isInitialized()
+    });
     
     // Flush any remaining operations
     await this.flushOperations();
@@ -436,14 +445,18 @@ class OperationsService {
       }
     }
 
-    // Clear state
+    // Clear state but preserve structure
     this.listeners.clear();
     this.operationQueue = [];
     this.offlineQueue = [];
     this.currentCanvasId = null;
     this.currentUserId = null;
     this.operationsRef = null;
-    this.callbacks = {};
+    // Don't completely clear callbacks - keep the structure
+    // This helps if re-initialization happens quickly
+    if (Object.keys(this.callbacks).length > 0) {
+      console.log('[OperationsService] Preserving callback structure during cleanup');
+    }
     
     console.log('[OperationsService] Cleanup completed');
   }

@@ -65,6 +65,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRemoteOperationRef = useRef<((op: any) => void) | null>(null);
   const excalidrawRef = useRef<any>(null);
+  const textEditingInterval = useRef<NodeJS.Timeout | null>(null);
+  const isTextEditing = useRef<boolean>(false);
   
   // Collaboration state
   const [collaborationEnabled, setCollaborationEnabled] = useState(false);
@@ -158,6 +160,17 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         // Update the scene
         currentAPI.updateScene(updateParams);
         
+        // Debug: Check what elements we just sent to Excalidraw
+        const textElementsInUpdate = completelyNewElements.filter(el => el.type === 'text' && el.containerId);
+        if (textElementsInUpdate.length > 0) {
+          console.log('[CanvasEditor] Text elements sent to updateScene:', textElementsInUpdate.map(el => ({
+            id: el.id,
+            text: el.text,
+            containerId: el.containerId,
+            hasText: 'text' in el
+          })));
+        }
+        
         // Update lastElements to prevent detecting this as a local change
         // Use shallow copy of elements to maintain proper change detection
         lastElements.current = completelyNewElements.map(el => ({ ...el }));
@@ -215,8 +228,76 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     return () => {
       console.log('[CanvasEditor] 💀 Component unmounting');
       setMounted(false);
+      // Clean up text editing interval
+      if (textEditingInterval.current) {
+        clearInterval(textEditingInterval.current);
+      }
     };
   }, []);
+  
+  // Commented out text editing detection due to rendering issues
+  // TODO: Investigate why polling during text editing causes Excalidraw rendering errors
+  /*
+  useEffect(() => {
+    if (!excalidrawAPI || !collaborationEnabled || !operationsInitialized || !user) return;
+    
+    const detectTextEditing = () => {
+      // Check if there's an active text editor (textarea) in the Excalidraw canvas
+      const textEditor = document.querySelector('.excalidraw-textEditorContainer textarea');
+      
+      if (textEditor && !isTextEditing.current) {
+        // Text editing started
+        isTextEditing.current = true;
+        console.log('[CanvasEditor] Text editing started, starting polling');
+        
+        // Start polling for text changes every 500ms
+        textEditingInterval.current = setInterval(() => {
+          if (!excalidrawAPI) return;
+          
+          const currentElements = excalidrawAPI.getSceneElements();
+          const changes = detectChanges(lastElements.current || [], currentElements);
+          
+          if (changes.updated.length > 0 || changes.added.length > 0) {
+            // Send any changes detected during text editing (including bound text)
+            console.log('[CanvasEditor] Changes detected during text editing');
+            const operations = changesToOperations(changes);
+            
+            operations.forEach(async (op) => {
+              try {
+                await queueOperation(op.type, op.elementIds, op.data);
+              } catch (error) {
+                console.error('[CanvasEditor] Failed to queue text operation:', error);
+              }
+            });
+            
+            // Update lastElements after sending changes
+            lastElements.current = currentElements.map(el => ({ ...el }));
+          }
+        }, 500); // Poll every 500ms for smooth real-time updates
+        
+      } else if (!textEditor && isTextEditing.current) {
+        // Text editing ended
+        isTextEditing.current = false;
+        console.log('[CanvasEditor] Text editing ended, stopping polling');
+        
+        if (textEditingInterval.current) {
+          clearInterval(textEditingInterval.current);
+          textEditingInterval.current = null;
+        }
+      }
+    };
+    
+    // Check for text editing every 200ms
+    const checkInterval = setInterval(detectTextEditing, 200);
+    
+    return () => {
+      clearInterval(checkInterval);
+      if (textEditingInterval.current) {
+        clearInterval(textEditingInterval.current);
+      }
+    };
+  }, [excalidrawAPI, collaborationEnabled, operationsInitialized, user, queueOperation]);
+  */
 
   // The excalidrawAPI callback will be called when the API is ready
 
@@ -961,7 +1042,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               const changes = detectChanges(lastElements.current || [], elements);
               
               if (changes.added.length > 0 || changes.updated.length > 0 || changes.deleted.length > 0) {
-                const operations = changesToOperations(changes);
+                // Pass all current elements to ensure bound elements are included
+                const operations = changesToOperations(changes, elements);
                 
                 if (operations.length > 0) {
                   operations.forEach(async (op) => {
@@ -977,6 +1059,19 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
               // Update lastElements AFTER processing changes - shallow copy of each element
               // This creates new objects for comparison but avoids deep nested copying
               lastElements.current = elements.map(el => ({ ...el }));
+              
+              // Debug: Check if text elements are still present
+              const textElements = elements.filter(el => el.type === 'text');
+              const boundTextElements = textElements.filter(el => el.containerId);
+              if (boundTextElements.length > 0) {
+                console.log('[CanvasEditor] After update, bound text elements:', boundTextElements.map(el => ({
+                  id: el.id,
+                  text: el.text,
+                  containerId: el.containerId,
+                  x: el.x,
+                  y: el.y
+                })));
+              }
             } else {
               // Still update lastElements for when collaboration gets enabled
               lastElements.current = elements.map(el => ({ ...el }));

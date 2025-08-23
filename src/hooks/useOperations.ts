@@ -17,11 +17,31 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
   const initRef = useRef(false);
   const previousCanvasId = useRef<string | null>(null);
   const callbacksRef = useRef<OperationCallbacks | undefined>(callbacks);
+  const cleanupScheduled = useRef(false);
   
   // Update callbacks ref whenever they change
   useEffect(() => {
     callbacksRef.current = callbacks;
-  }, [callbacks]);
+    // If already initialized, update the callbacks in the service immediately
+    if (isInitialized && user && canvasId && enabled) {
+      console.log('[useOperations] Updating callbacks in already initialized service');
+      operationsService.initializeOperations(
+        canvasId,
+        user.uid,
+        {
+          onRemoteOperation: (operation) => {
+            console.log('[useOperations] Forwarding remote operation to callback');
+            callbacksRef.current?.onRemoteOperation?.(operation);
+          },
+          onSyncStateChange: (syncing) => {
+            setIsSyncing(syncing);
+            callbacksRef.current?.onSyncStateChange?.(syncing);
+          },
+          onConflict: callbacksRef.current?.onConflict
+        }
+      );
+    }
+  }, [callbacks, isInitialized, user, canvasId, enabled]);
 
   useEffect(() => {
     console.log('[useOperations] 🔍 Hook effect triggered:', {
@@ -76,18 +96,31 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
     previousCanvasId.current = canvasId;
     
     return () => {
-      // Don't cleanup here - it causes issues with callback references
-      // Cleanup will happen in the unmount effect
+      // Schedule cleanup only if canvas is changing or component is unmounting
+      // Don't cleanup immediately to allow for re-initialization
+      console.log('[useOperations] Effect cleanup triggered for canvas:', canvasId);
+      cleanupScheduled.current = true;
+      
+      // Give time for re-initialization before cleanup
+      const timeoutId = setTimeout(() => {
+        if (cleanupScheduled.current) {
+          console.log('[useOperations] Executing scheduled cleanup for canvas:', canvasId);
+          operationsService.cleanup().catch(console.error);
+          cleanupScheduled.current = false;
+        }
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
     };
   }, [user?.uid, canvasId, enabled]); // Remove callbacks from dependencies
   
-  // Cleanup on unmount
+  // Cancel scheduled cleanup when re-initializing
   useEffect(() => {
-    return () => {
-      console.log('[useOperations] Component unmounting, cleaning up...');
-      operationsService.cleanup().catch(console.error);
-    };
-  }, []); // Empty deps - only run on unmount
+    if (isInitialized && cleanupScheduled.current) {
+      console.log('[useOperations] Canceling scheduled cleanup due to re-initialization');
+      cleanupScheduled.current = false;
+    }
+  }, [isInitialized]);
 
   const queueOperation = useCallback(async (
     type: CanvasOperation['type'],

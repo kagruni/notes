@@ -22,10 +22,13 @@ export function transformElementsForFirebase(elements: any[]): any[] {
         // Convert scale [x, y] to {x, y}
         transformed[key] = { x: value[0], y: value[1] };
       } else if (key === 'boundElements' && Array.isArray(value)) {
-        // Ensure boundElements are objects, not nested arrays
+        // Ensure boundElements are objects for Firebase
         transformed[key] = value.map((item, idx) => {
           if (Array.isArray(item)) {
-            return { id: item[0], type: item[1] };
+            return { id: item[0], type: item[1] || 'text' };
+          }
+          if (item && typeof item === 'object' && 'id' in item) {
+            return { id: item.id, type: item.type || 'text' };
           }
           return item;
         });
@@ -74,9 +77,13 @@ export function transformElementsFromFirebase(elements: any[]): any[] {
     
     // Convert boundElements back to array format if needed
     if (transformed.boundElements && Array.isArray(transformed.boundElements)) {
+      console.log('[transformElementsFromFirebase] Processing boundElements for element:', element.id, transformed.boundElements);
       transformed.boundElements = transformed.boundElements.map((item: any) => {
         if (item && typeof item === 'object' && 'id' in item && 'type' in item) {
-          return [item.id, item.type];
+          return { id: item.id, type: item.type };  // Keep as object, not array
+        }
+        if (Array.isArray(item)) {
+          return { id: item[0], type: item[1] || 'text' };  // Convert array to object
         }
         return item;
       });
