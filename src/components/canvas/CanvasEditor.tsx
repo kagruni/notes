@@ -50,27 +50,10 @@ interface CanvasEditorProps {
 }
 
 export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: CanvasEditorProps) {
-  console.log('[CanvasEditor] 🚀 Component render started:', { 
-    isOpen, 
-    canvasId: canvas?.id,
-    collaborationEnabled: canvas?.collaborationEnabled
-  });
-  
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { getExcalidrawLibraryItems, loading: librariesLoading, error: librariesError } = usePreBundledLibraries();
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
-  
-  // Log API state changes
-  useEffect(() => {
-    console.log('[CanvasEditor] 🔧 excalidrawAPI state changed:', {
-      hasAPI: !!excalidrawAPI,
-      apiType: typeof excalidrawAPI,
-      hasGetSceneElements: !!(excalidrawAPI?.getSceneElements),
-      hasUpdateScene: !!(excalidrawAPI?.updateScene),
-      pendingOpsCount: pendingRemoteOps.current?.length || 0
-    });
-  }, [excalidrawAPI]);
   const [hasChanges, setHasChanges] = useState(false);
   const [title, setTitle] = useState('');
   const [mounted, setMounted] = useState(false);
@@ -120,51 +103,27 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   
   // Create a stable callback that doesn't depend on excalidrawAPI in dependencies
   const handleRemoteOperation = useCallback((operation: any) => {
-    console.log('[CanvasEditor] 📥 REMOTE OPERATION HANDLER CALLED!', {
-      type: operation.type, 
-      elementIds: operation.elementIds,
-      hasAPI: !!excalidrawAPIRef.current,
-      apiType: typeof excalidrawAPIRef.current,
-      apiMethods: excalidrawAPIRef.current ? Object.keys(excalidrawAPIRef.current).slice(0, 10) : [],
-      isApplying: isApplyingRemoteOp.current
-    });
-    
     // Get the current API reference from ref
     const currentAPI = excalidrawAPIRef.current;
-    console.log('[CanvasEditor] API check:', {
-      hasAPI: !!currentAPI,
-      apiType: typeof currentAPI,
-      hasGetSceneElements: currentAPI && typeof currentAPI.getSceneElements === 'function',
-      hasUpdateScene: currentAPI && typeof currentAPI.updateScene === 'function',
-      apiKeys: currentAPI ? Object.keys(currentAPI).slice(0, 10) : [],
-      apiConstructor: currentAPI ? currentAPI.constructor.name : null
-    });
     
     if (!currentAPI) {
-      console.log('[CanvasEditor] No API available, queueing operation');
       pendingRemoteOps.current.push(operation);
       return;
     }
-    
-    console.log('[CanvasEditor] ✅ API available, processing operation');
     
     if (isApplyingRemoteOp.current) {
-      console.log('[CanvasEditor] Already applying, queueing operation');
       pendingRemoteOps.current.push(operation);
       return;
     }
     
-    console.log('[CanvasEditor] ✅ Applying remote operation');
     isApplyingRemoteOp.current = true;
     
     try {
       // Get current elements from Excalidraw
       const currentElements = currentAPI.getSceneElements();
-      console.log('[CanvasEditor] Current elements:', currentElements.length);
       
       // Apply the operation to get updated elements
       const updatedElements = applyOperation(currentElements, operation);
-      console.log('[CanvasEditor] Updated elements:', updatedElements.length);
       
       // CRITICAL: Use restoreElements if available for proper reconciliation
       let elementsToUpdate = updatedElements;
@@ -174,17 +133,15 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           // restoreElements properly reconciles elements with Excalidraw's internal state
           const restoredData = excalidrawUtils.restoreElements(updatedElements, null);
           elementsToUpdate = restoredData.elements || updatedElements;
-          console.log('[CanvasEditor] Restored elements:', elementsToUpdate.length);
         } catch (e) {
-          console.log('[CanvasEditor] restoreElements failed, using direct update');
+          // Use direct update if restore fails
         }
       }
       
       // Create completely new element objects to force Excalidraw to update
       try {
-        // CRITICAL: Create completely new array with new element instances
-        // This ensures Excalidraw detects the change
-        const completelyNewElements = JSON.parse(JSON.stringify(elementsToUpdate));
+        // Create new array with element references - Excalidraw elements are already immutable
+        const completelyNewElements = [...elementsToUpdate];
         
         // Prepare update parameters
         const updateParams: any = {
@@ -194,20 +151,16 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         // Use the new API if CaptureUpdateAction is available
         if (CaptureUpdateAction && CaptureUpdateAction.NEVER !== undefined) {
           updateParams.captureUpdate = CaptureUpdateAction.NEVER;
-          console.log('[CanvasEditor] Using CaptureUpdateAction.NEVER');
         } else {
           updateParams.commitToHistory = false;
-          console.log('[CanvasEditor] Using commitToHistory: false');
         }
         
         // Update the scene
-        console.log('[CanvasEditor] 🎨 Updating scene with', completelyNewElements.length, 'elements');
         currentAPI.updateScene(updateParams);
         
-        // CRITICAL: Update lastElements IMMEDIATELY to prevent detecting this as a local change
-        // This must happen BEFORE onChange fires
-        lastElements.current = JSON.parse(JSON.stringify(completelyNewElements));
-        console.log('[CanvasEditor] ✅ Scene updated successfully');
+        // Update lastElements to prevent detecting this as a local change
+        // Use shallow copy of elements to maintain proper change detection
+        lastElements.current = completelyNewElements.map(el => ({ ...el }));
         
       } catch (updateError) {
         console.error('[CanvasEditor] ❌ updateScene error:', updateError);
@@ -223,7 +176,6 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
       if (pendingRemoteOps.current.length > 0) {
         const nextOp = pendingRemoteOps.current.shift();
         if (nextOp) {
-          console.log('[CanvasEditor] 🔄 Processing queued operation');
           // Process next operation after a short delay to avoid stack overflow
           setTimeout(() => {
             handleRemoteOperation(nextOp);
@@ -975,18 +927,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           onChange={(elements, appState, files) => {
             // Early return if not ready for collaboration
             if (!user || !canvas) {
-              console.log('[CanvasEditor] 🔄 onChange triggered but no user/canvas yet');
               return;
             }
-            
-            console.log('[CanvasEditor] 🔄 onChange triggered:', {
-              elementCount: elements.length,
-              collaborationEnabled,
-              operationsInitialized,
-              hasUser: !!user,
-              isApplyingRemoteOp: isApplyingRemoteOp.current,
-              sceneVersion: sceneVersion.current
-            });
             
             // Check if theme changed in Excalidraw and sync with our app
             if (appState.theme && appState.theme !== theme) {
@@ -995,24 +937,15 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             
             // Don't process if we're applying remote operations
             if (isApplyingRemoteOp.current) {
-              console.log('[CanvasEditor] 🚫 Skipping onChange - applying remote operation');
-              // Still update lastElements to keep in sync - TRUE DEEP COPY
-              try {
-                lastElements.current = JSON.parse(JSON.stringify(elements));
-              } catch (e) {
-                lastElements.current = elements.map(el => ({ ...el }));
-              }
+              // Still update lastElements to keep in sync - need to copy the elements
+              lastElements.current = elements.map(el => ({ ...el }));
               return;
             }
             
             // Initialize lastElements on first change if not set
             if (!lastElements.current || lastElements.current.length === 0) {
-              // TRUE DEEP COPY to preserve the initial state
-              try {
-                lastElements.current = JSON.parse(JSON.stringify(elements));
-              } catch (e) {
-                lastElements.current = elements.map(el => ({ ...el }));
-              }
+              // Copy elements for initialization
+              lastElements.current = elements.map(el => ({ ...el }));
               sceneVersion.current = 1;
               // Don't return here if collaboration is enabled - we might miss the first change!
               if (!collaborationEnabled) {
@@ -1025,47 +958,13 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             
             // Detect and queue operations for collaboration
             if (collaborationEnabled && operationsInitialized && user) {
-              console.log('[CanvasEditor] 🔍 BEFORE detectChanges:', {
-                lastElementsCount: lastElements.current?.length || 0,
-                currentElementsCount: elements.length,
-                firstLastElement: lastElements.current?.[0] ? {
-                  id: lastElements.current[0].id,
-                  x: lastElements.current[0].x,
-                  y: lastElements.current[0].y,
-                  version: lastElements.current[0].version
-                } : null,
-                firstCurrentElement: elements[0] ? {
-                  id: elements[0].id,
-                  x: elements[0].x,
-                  y: elements[0].y,
-                  version: elements[0].version
-                } : null
-              });
-              
               const changes = detectChanges(lastElements.current || [], elements);
-              
-              console.log('[CanvasEditor] 🔍 AFTER detectChanges:', {
-                collaborationEnabled,
-                operationsInitialized,
-                hasUser: !!user,
-                hasLastElements: !!lastElements.current,
-                lastElementsCount: lastElements.current?.length || 0,
-                currentElementsCount: elements.length,
-                changes: {
-                  added: changes.added.length,
-                  updated: changes.updated.length,
-                  deleted: changes.deleted.length
-                }
-              });
               
               if (changes.added.length > 0 || changes.updated.length > 0 || changes.deleted.length > 0) {
                 const operations = changesToOperations(changes);
                 
-                console.log('[CanvasEditor] 📤 Sending operations:', operations.length, 'operations');
-                
                 if (operations.length > 0) {
                   operations.forEach(async (op) => {
-                    console.log('[CanvasEditor] 📤 Queueing operation:', op.type, op.elementIds);
                     try {
                       await queueOperation(op.type, op.elementIds, op.data);
                     } catch (error) {
@@ -1075,25 +974,11 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
                 }
               }
               
-              // Update lastElements AFTER processing changes - TRUE DEEP COPY with JSON
-              try {
-                // Use JSON for true deep copy to ensure no shared references
-                lastElements.current = JSON.parse(JSON.stringify(elements));
-              } catch (e) {
-                // Fallback to shallow copy if JSON fails (circular references)
-                console.warn('[CanvasEditor] JSON deep copy failed, using shallow copy:', e);
-                lastElements.current = elements.map(el => ({ ...el }));
-              }
+              // Update lastElements AFTER processing changes - shallow copy of each element
+              // This creates new objects for comparison but avoids deep nested copying
+              lastElements.current = elements.map(el => ({ ...el }));
             } else {
-              console.log('[CanvasEditor] ❌ Skipping change detection:', {
-                collaborationEnabled,
-                operationsInitialized,
-                hasUser: !!user,
-                reason: !collaborationEnabled ? 'Collaboration disabled' : 
-                        !operationsInitialized ? 'Operations not initialized' :
-                        !user ? 'No user' : 'Unknown'
-              });
-              // Still update lastElements for when collaboration gets enabled - DEEP COPY
+              // Still update lastElements for when collaboration gets enabled
               lastElements.current = elements.map(el => ({ ...el }));
             }
             

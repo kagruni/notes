@@ -16,23 +16,6 @@ export function detectChanges(
   oldElements: ExcalidrawElement[],
   newElements: ExcalidrawElement[]
 ): ExcalidrawChange {
-  console.log('[detectChanges] 🔎 DETECTING CHANGES:', {
-    oldCount: oldElements.length,
-    newCount: newElements.length,
-    difference: newElements.length - oldElements.length
-  });
-  
-  // Log sample elements for debugging
-  if (newElements.length > oldElements.length && newElements.length > 0) {
-    const lastNew = newElements[newElements.length - 1];
-    console.log('[detectChanges] Potential new element:', {
-      id: lastNew.id,
-      type: lastNew.type,
-      x: lastNew.x,
-      y: lastNew.y
-    });
-  }
-  
   const oldMap = new Map(oldElements.map(el => [el.id, el]));
   const newMap = new Map(newElements.map(el => [el.id, el]));
 
@@ -44,14 +27,8 @@ export function detectChanges(
   newElements.forEach(newEl => {
     const oldEl = oldMap.get(newEl.id);
     if (!oldEl) {
-      console.log('[detectChanges] Element added:', newEl.id, newEl.type);
       added.push(newEl);
     } else if (hasElementChanged(oldEl, newEl)) {
-      console.log('[detectChanges] Element updated:', newEl.id, {
-        oldVersion: (oldEl as any).version,
-        newVersion: (newEl as any).version,
-        type: newEl.type
-      });
       updated.push(newEl);
     }
   });
@@ -59,16 +36,18 @@ export function detectChanges(
   // Find deleted elements
   oldElements.forEach(oldEl => {
     if (!newMap.has(oldEl.id)) {
-      console.log('[detectChanges] Element deleted:', oldEl.id);
       deleted.push(oldEl.id);
     }
   });
 
-  console.log('[detectChanges] Results:', {
-    added: added.length,
-    updated: updated.length,
-    deleted: deleted.length
-  });
+  // Only log summary if there are changes
+  if (added.length > 0 || updated.length > 0 || deleted.length > 0) {
+    console.log('[detectChanges] Changes detected:', {
+      added: added.length,
+      updated: updated.length,
+      deleted: deleted.length
+    });
+  }
 
   return { added, updated, deleted };
 }
@@ -77,83 +56,59 @@ export function detectChanges(
  * Checks if an element has changed
  */
 function hasElementChanged(oldEl: ExcalidrawElement, newEl: ExcalidrawElement): boolean {
-  // DEEP LOG: Show actual values for debugging
-  const deepComparison = {
-    id: oldEl.id,
-    type: oldEl.type,
-    oldX: oldEl.x,
-    newX: newEl.x,
-    xChanged: oldEl.x !== newEl.x,
-    oldY: oldEl.y,
-    newY: newEl.y,
-    yChanged: oldEl.y !== newEl.y,
-    oldVersionNonce: (oldEl as any).versionNonce,
-    newVersionNonce: (newEl as any).versionNonce,
-    versionNonceChanged: (oldEl as any).versionNonce !== (newEl as any).versionNonce,
-    sameObjectReference: oldEl === newEl
-  };
-  
-  console.log('[hasElementChanged] DEEP COMPARISON:', deepComparison);
+  // Special check for text elements - text changes are critical
+  if (oldEl.type === 'text' || newEl.type === 'text') {
+    const oldText = (oldEl as any).text || '';
+    const newText = (newEl as any).text || '';
+    if (oldText !== newText) {
+      return true;
+    }
+  }
   
   // Check versionNonce first (Excalidraw uses this for change tracking)
   if ('versionNonce' in oldEl && 'versionNonce' in newEl) {
-    const versionNonceChanged = (oldEl as any).versionNonce !== (newEl as any).versionNonce;
-    if (versionNonceChanged) {
-      console.log('[hasElementChanged] ✅ VersionNonce changed:', {
-        id: oldEl.id,
-        oldVersionNonce: (oldEl as any).versionNonce,
-        newVersionNonce: (newEl as any).versionNonce
-      });
+    if ((oldEl as any).versionNonce !== (newEl as any).versionNonce) {
       return true;
     }
   }
   
   // Check version if available
   if ('version' in oldEl && 'version' in newEl) {
-    const versionChanged = oldEl.version !== newEl.version;
-    if (versionChanged) {
-      console.log('[hasElementChanged] ✅ Version changed:', {
-        id: oldEl.id,
-        oldVersion: oldEl.version,
-        newVersion: newEl.version
-      });
+    if (oldEl.version !== newEl.version) {
+      return true;
+    }
+  }
+  
+  // Check updated timestamp - this should catch text changes
+  if ('updated' in oldEl && 'updated' in newEl) {
+    if ((oldEl as any).updated !== (newEl as any).updated) {
       return true;
     }
   }
 
   // If no version tracking, compare all properties
-  // Check key properties and also 'updated' timestamp
+  // Check key properties including text
   const propsToCheck = ['x', 'y', 'width', 'height', 'angle', 'strokeColor', 
                         'backgroundColor', 'fillStyle', 'strokeWidth', 'roughness',
-                        'opacity', 'text', 'fontSize', 'fontFamily', 'points',
-                        'lastCommittedPoint', 'startBinding', 'endBinding', 'updated'];
+                        'opacity', 'text', 'fontSize', 'fontFamily', 'textAlign',
+                        'verticalAlign', 'baseline', 'points', 'roundness',
+                        'lastCommittedPoint', 'startBinding', 'endBinding'];
 
-  const changedProps: string[] = [];
-  propsToCheck.forEach(prop => {
+  for (const prop of propsToCheck) {
     const oldVal = (oldEl as any)[prop];
     const newVal = (newEl as any)[prop];
     
     // Special handling for arrays (like points)
     if (Array.isArray(oldVal) && Array.isArray(newVal)) {
       if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-        changedProps.push(`${prop}: [array changed]`);
+        return true;
       }
     } else if (oldVal !== newVal) {
-      changedProps.push(`${prop}: ${oldVal} → ${newVal}`);
+      return true;
     }
-  });
-  
-  if (changedProps.length > 0) {
-    console.log('[hasElementChanged] ✅ Props changed:', {
-      id: oldEl.id,
-      type: oldEl.type,
-      changes: changedProps
-    });
-    return true;
   }
   
   // No changes detected
-  console.log('[hasElementChanged] ❌ No changes for element:', oldEl.id);
   return false;
 }
 
