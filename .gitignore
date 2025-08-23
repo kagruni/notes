@@ -48,6 +48,9 @@ lerna-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Version management
+src/lib/version.json
+
 # IDEs and editors
 .vscode/
 .idea/

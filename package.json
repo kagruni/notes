@@ -4,9 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "prebuild": "node scripts/build-version.js",
+    "build": "node scripts/build-version.js && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "version:generate": "node scripts/build-version.js",
+    "release:patch": "npm version patch && git push origin main --tags",
+    "release:minor": "npm version minor && git push origin main --tags",
+    "release:major": "npm version major && git push origin main --tags"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
