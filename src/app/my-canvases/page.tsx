@@ -5,6 +5,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { shareCanvas } from '@/services/collaboration';
+import { PermissionLevel } from '@/types';
 
 export default function MyCanvasesPage() {
   const [canvases, setCanvases] = useState<any[]>([]);
@@ -57,7 +58,7 @@ export default function MyCanvasesPage() {
 
     setSharing(canvasId);
     try {
-      const invite = await shareCanvas(canvasId, email, 'editor');
+      const invite = await shareCanvas(canvasId, email, PermissionLevel.EDITOR);
       alert(`Invite sent! Token: ${invite.inviteToken}\n\nShare this link:\nhttp://localhost:3000/canvas/invite/${invite.inviteToken}`);
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : 'Failed to share'}`);

@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { shareCanvas, acceptInvite } from '@/services/collaboration';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { PermissionLevel } from '@/types';
 
 export default function TestFlowPage() {
   const { user } = useAuth();
@@ -41,7 +42,7 @@ export default function TestFlowPage() {
       addResult(`Canvas title/name: ${canvasData.title || canvasData.name || 'undefined'}`);
       
       // Try to share
-      const invite = await shareCanvas(canvasId, email, 'editor');
+      const invite = await shareCanvas(canvasId, email, PermissionLevel.EDITOR);
       addResult('✅ Invite created successfully');
       addResult(`Invite token: ${invite.inviteToken}`);
       setInviteToken(invite.inviteToken);

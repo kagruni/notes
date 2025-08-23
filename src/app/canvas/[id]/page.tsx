@@ -53,8 +53,19 @@ export default function CanvasPage() {
 
         const canvasData = { id: canvasDoc.id, ...canvasDoc.data() } as Canvas;
         
-        // Check permissions
-        const userPermissions = validatePermissions(user.uid, canvasData);
+        // Check permissions - convert collaborators to array format if needed
+        const canvasForPermissions = {
+          userId: canvasData.userId,
+          sharedWith: canvasData.sharedWith,
+          permissions: canvasData.permissions,
+          collaborators: canvasData.collaborators 
+            ? Object.entries(canvasData.collaborators).map(([userId, collab]) => ({
+                userId,
+                role: collab.role || 'viewer' as 'viewer' | 'editor' | 'admin'
+              }))
+            : undefined
+        };
+        const userPermissions = validatePermissions(user.uid, canvasForPermissions);
         setPermissions(userPermissions);
 
         if (!userPermissions.canView) {
@@ -97,7 +108,18 @@ export default function CanvasPage() {
             setCanvas(updatedCanvas);
             
             // Update permissions in case they changed
-            const updatedPermissions = validatePermissions(user.uid, updatedCanvas);
+            const updatedCanvasForPermissions = {
+              userId: updatedCanvas.userId,
+              sharedWith: updatedCanvas.sharedWith,
+              permissions: updatedCanvas.permissions,
+              collaborators: updatedCanvas.collaborators 
+                ? Object.entries(updatedCanvas.collaborators).map(([userId, collab]) => ({
+                    userId,
+                    role: collab.role || 'viewer' as 'viewer' | 'editor' | 'admin'
+                  }))
+                : undefined
+            };
+            const updatedPermissions = validatePermissions(user.uid, updatedCanvasForPermissions);
             setPermissions(updatedPermissions);
           }
         });

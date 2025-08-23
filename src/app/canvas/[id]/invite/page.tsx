@@ -12,15 +12,22 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-export default function CanvasInvitePage({ params }: { params: { id: string } }) {
+export default function CanvasInvitePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'needs-auth'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [canvasTitle, setCanvasTitle] = useState<string>('');
+  const [canvasId, setCanvasId] = useState<string | null>(null);
 
   useEffect(() => {
+    params.then(p => setCanvasId(p.id));
+  }, [params]);
+
+  useEffect(() => {
+    if (!canvasId) return;
+    
     const acceptInviteToken = async () => {
       const token = searchParams.get('token');
       
@@ -47,7 +54,7 @@ export default function CanvasInvitePage({ params }: { params: { id: string } })
         
         // Redirect to canvas after 2 seconds
         setTimeout(() => {
-          router.push(`/canvas/${params.id}`);
+          router.push(`/canvas/${canvasId}`);
         }, 2000);
       } catch (err) {
         console.error('Failed to accept invite:', err);
@@ -57,7 +64,7 @@ export default function CanvasInvitePage({ params }: { params: { id: string } })
     };
 
     acceptInviteToken();
-  }, [searchParams, params.id, router, user, authLoading]);
+  }, [searchParams, canvasId, router, user, authLoading]);
 
   if (authLoading || status === 'loading') {
     return (
@@ -88,7 +95,7 @@ export default function CanvasInvitePage({ params }: { params: { id: string } })
               You need to sign in to accept this canvas invitation
             </p>
             <Link
-              href={`/auth?redirect=/canvas/${params.id}/invite?token=${searchParams.get('token')}`}
+              href={`/auth?redirect=/canvas/${canvasId}/invite?token=${searchParams.get('token')}`}
               className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <LogIn className="w-5 h-5 mr-2" />

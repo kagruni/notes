@@ -48,7 +48,7 @@ export default function SharedWithMePage() {
             id: doc.id,
             ...data,
             userRole: role
-          };
+          } as any;
         });
         
         // Sort by last modified
