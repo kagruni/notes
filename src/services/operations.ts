@@ -83,7 +83,9 @@ class OperationsService {
     if (this.currentCanvasId === canvasId && 
         this.currentUserId === userId && 
         this.operationsRef) {
-      console.log('[OperationsService] Already initialized for this canvas and user');
+      console.log('[OperationsService] Already initialized for this canvas and user, updating callbacks');
+      // Update callbacks even if already initialized
+      this.callbacks = callbacks || {};
       return; // Already initialized
     }
 

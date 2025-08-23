@@ -346,6 +346,12 @@ export function applyOperation(
           y: el.y !== undefined ? el.y : baseElement.y,
           width: el.width !== undefined ? el.width : baseElement.width,
           height: el.height !== undefined ? el.height : baseElement.height,
+          // Text properties
+          text: el.text !== undefined ? el.text : baseElement.text,
+          fontSize: el.fontSize !== undefined ? el.fontSize : baseElement.fontSize,
+          fontFamily: el.fontFamily !== undefined ? el.fontFamily : baseElement.fontFamily,
+          textAlign: el.textAlign !== undefined ? el.textAlign : baseElement.textAlign,
+          verticalAlign: el.verticalAlign !== undefined ? el.verticalAlign : baseElement.verticalAlign,
           // Force update timestamp
           updated: Date.now(),
           // CRITICAL: Increment version and update versionNonce for proper change detection

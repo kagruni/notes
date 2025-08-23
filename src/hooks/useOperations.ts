@@ -16,6 +16,12 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
   const [isInitialized, setIsInitialized] = useState(false);
   const initRef = useRef(false);
   const previousCanvasId = useRef<string | null>(null);
+  const callbacksRef = useRef<OperationCallbacks | undefined>(callbacks);
+  
+  // Update callbacks ref whenever they change
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  }, [callbacks]);
 
   useEffect(() => {
     console.log('[useOperations] 🔍 Hook effect triggered:', {
@@ -33,13 +39,6 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
         enabled,
         reason: !user ? 'No user' : !canvasId ? 'No canvas ID' : 'Not enabled'
       });
-      
-      // Only cleanup if we were previously initialized
-      if (isInitialized) {
-        console.log('[useOperations] Was initialized, cleaning up...');
-        operationsService.cleanup().catch(console.error);
-        setIsInitialized(false);
-      }
       return;
     }
 
@@ -51,11 +50,15 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
           canvasId,
           user.uid,
           {
-            ...callbacks,
+            onRemoteOperation: (operation) => {
+              console.log('[useOperations] Forwarding remote operation to callback');
+              callbacksRef.current?.onRemoteOperation?.(operation);
+            },
             onSyncStateChange: (syncing) => {
               setIsSyncing(syncing);
-              callbacks?.onSyncStateChange?.(syncing);
-            }
+              callbacksRef.current?.onSyncStateChange?.(syncing);
+            },
+            onConflict: callbacksRef.current?.onConflict
           }
         );
 
@@ -73,15 +76,10 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
     previousCanvasId.current = canvasId;
     
     return () => {
-      // Only cleanup when canvas actually changes or component unmounts
-      if (previousCanvasId.current && previousCanvasId.current !== canvasId) {
-        console.log('[useOperations] Canvas changed, cleaning up old canvas:', previousCanvasId.current);
-        operationsService.cleanup().catch(console.error);
-        setIsInitialized(false);
-        setIsSyncing(false);
-      }
+      // Don't cleanup here - it causes issues with callback references
+      // Cleanup will happen in the unmount effect
     };
-  }, [user?.uid, canvasId, enabled]); // Use user.uid instead of user object
+  }, [user?.uid, canvasId, enabled]); // Remove callbacks from dependencies
   
   // Cleanup on unmount
   useEffect(() => {
@@ -114,16 +112,26 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
       dataKeys: Object.keys(data || {})
     });
     
-    await operationsService.queueOperation({
-      type,
-      elementIds,
-      data
-    });
+    try {
+      await operationsService.queueOperation({
+        type,
+        elementIds,
+        data
+      });
 
-    const newSize = operationsService.getQueueSize();
-    console.log('[useOperations] Queue size after operation:', newSize);
-    setQueueSize(newSize);
-  }, [isInitialized]);
+      const newSize = operationsService.getQueueSize();
+      console.log('[useOperations] Queue size after operation:', newSize);
+      setQueueSize(newSize);
+    } catch (error) {
+      console.error('[useOperations] Failed to queue operation:', error);
+      // Try to re-initialize if the service was cleared
+      if (user && canvasId && enabled) {
+        console.log('[useOperations] Attempting to re-initialize after failure');
+        setIsInitialized(false);
+        // Will re-initialize on next effect run
+      }
+    }
+  }, [isInitialized, user, canvasId, enabled]);
 
   const forceSync = useCallback(async () => {
     if (!isInitialized) return;
