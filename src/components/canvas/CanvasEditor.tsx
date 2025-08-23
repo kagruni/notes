@@ -13,7 +13,9 @@ import ShareButton from './ShareButton';
 import CollaborativeCursors from './CollaborativeCursors';
 import CursorChat from './CursorChat';
 import CollaboratorsList from './CollaboratorsList';
-import RTDBTest from './RTDBTest';
+import MinimalSyncTest from './MinimalSyncTest';
+import ElementInspector from './ElementInspector';
+import FirebaseDirectTest from './FirebaseDirectTest';
 import { X, Save, Users, Wifi, WifiOff } from 'lucide-react';
 import { 
   detectChanges, 
@@ -21,11 +23,13 @@ import {
   applyOperation, 
   throttle 
 } from '@/utils/excalidraw-collab';
+import { cleanCanvasUpdates } from '@/utils/firestore-clean';
+import { CanvasOperation } from '@/services/operations';
 
 // Import Excalidraw CSS - CRITICAL for proper rendering
 import '@excalidraw/excalidraw/index.css';
 
-// Dynamically import Excalidraw component  
+// Dynamically import Excalidraw component and types
 const ExcalidrawComponent = dynamic(
   async () => {
     const excalidrawModule = await import('@excalidraw/excalidraw');
@@ -35,6 +39,8 @@ const ExcalidrawComponent = dynamic(
     ssr: false,
   }
 );
+
+// We'll import CaptureUpdateAction and other utilities dynamically when needed
 
 // No additional imports needed for thumbnail generation
 
@@ -63,6 +69,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
   // Collaboration state
   const [collaborationEnabled, setCollaborationEnabled] = useState(false);
   const [showCollaborators, setShowCollaborators] = useState(true);
+  const [CaptureUpdateAction, setCaptureUpdateAction] = useState<any>(null);
+  const [excalidrawUtils, setExcalidrawUtils] = useState<any>(null);
 
   // Initialize collaboration hooks
   const {
@@ -94,44 +102,143 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     enabled: collaborationEnabled && isOpen && !!canvas,
     callbacks: {
       onRemoteOperation: (operation) => {
-        console.log('[CanvasEditor] onRemoteOperation called:', {
-          hasAPI: !!excalidrawAPI,
-          isApplying: isApplyingRemoteOp.current,
-          operationType: operation.type
-        });
+        console.log('[CanvasEditor] 🔴 onRemoteOperation called with:', operation);
         
         if (!excalidrawAPI) {
-          console.warn('[CanvasEditor] No Excalidraw API available yet, queueing operation');
+          console.log('[CanvasEditor] No API, queueing');
           pendingRemoteOps.current.push(operation);
           return;
         }
         
         if (isApplyingRemoteOp.current) {
-          console.warn('[CanvasEditor] Already applying remote op, queueing');
+          console.log('[CanvasEditor] Already applying, queueing');
           pendingRemoteOps.current.push(operation);
           return;
         }
         
-        console.log('[CanvasEditor] Applying remote operation:', operation.type);
         isApplyingRemoteOp.current = true;
         
         try {
+          // Get current elements from Excalidraw
           const currentElements = excalidrawAPI.getSceneElements();
-          // console.log('[CanvasEditor] Current elements:', currentElements.length);
+          console.log('[CanvasEditor] Current elements before update:', currentElements.map(e => ({id: e.id, x: e.x, y: e.y})));
           
+          // Apply the operation to get updated elements
           const updatedElements = applyOperation(currentElements, operation);
-          // console.log('[CanvasEditor] Updated elements:', updatedElements.length);
+          console.log('[CanvasEditor] Elements after applyOperation:', updatedElements.map(e => ({id: e.id, x: e.x, y: e.y})));
           
-          // Update Excalidraw with remote changes
-          excalidrawAPI.updateScene({
-            elements: updatedElements
-          });
+          // CRITICAL: Use restoreElements if available for proper reconciliation
+          let elementsToUpdate = updatedElements;
           
-          lastElements.current = updatedElements;
-          // console.log('[CanvasEditor] Successfully applied remote operation');
+          if (excalidrawUtils?.restoreElements) {
+            try {
+              // restoreElements properly reconciles elements with Excalidraw's internal state
+              const restoredData = excalidrawUtils.restoreElements(updatedElements, null);
+              elementsToUpdate = restoredData.elements || updatedElements;
+              console.log('[CanvasEditor] Used restoreElements for reconciliation');
+            } catch (e) {
+              console.log('[CanvasEditor] restoreElements failed, using direct update');
+            }
+          }
+          
+          // Create completely new element objects to force Excalidraw to update
+          try {
+            // CRITICAL: Create completely new array with new element instances
+            // This ensures Excalidraw detects the change
+            const completelyNewElements = JSON.parse(JSON.stringify(elementsToUpdate));
+            
+            // Prepare update parameters
+            const updateParams: any = {
+              elements: completelyNewElements
+            };
+            
+            // Use the new API if CaptureUpdateAction is available
+            if (CaptureUpdateAction && CaptureUpdateAction.NEVER !== undefined) {
+              updateParams.captureUpdate = CaptureUpdateAction.NEVER;
+            } else {
+              updateParams.commitToHistory = false;
+            }
+            
+            // Update the scene
+            console.log('[CanvasEditor] Calling updateScene with:', updateParams);
+            excalidrawAPI.updateScene(updateParams);
+            console.log('[CanvasEditor] updateScene completed');
+            
+            // Immediately check what's in the scene
+            const afterUpdate = excalidrawAPI.getSceneElements();
+            console.log('[CanvasEditor] Elements immediately after updateScene:', afterUpdate.map(e => ({id: e.id, x: e.x, y: e.y})));
+            
+          } catch (updateError) {
+            console.error('[CanvasEditor] updateScene error:', updateError);
+          }
+          
+          // Update our reference to prevent detecting this as a local change
+          setTimeout(() => {
+            try {
+              // Get the actual current elements from Excalidraw after update
+              const actualElements = excalidrawAPI.getSceneElements();
+              lastElements.current = JSON.parse(JSON.stringify(actualElements));
+            } catch (e) {
+              lastElements.current = updatedElements.map(el => ({ ...el }));
+            }
+          }, 100);  // Wait for Excalidraw to process the update
+          
+          // Verify the update worked
+          setTimeout(() => {
+            const verifyElements = excalidrawAPI.getSceneElements();
+            
+            // Check if operation was applied
+            if (operation.type === 'add' && operation.data.elements) {
+              const addedElement = operation.data.elements[0];
+              const found = verifyElements.find((el: any) => el.id === addedElement.id);
+              if (found) {
+              } else {
+              }
+            }
+            
+            // Clear the flag after a longer delay to ensure onChange doesn't interfere
+            setTimeout(() => {
+              isApplyingRemoteOp.current = false;
+              console.log('[CanvasEditor] Cleared isApplyingRemoteOp flag');
+            }, 200);  // Increased delay
+            
+            // Process any queued operations
+            if (pendingRemoteOps.current.length > 0) {
+              const nextOp = pendingRemoteOps.current.shift();
+              if (nextOp) {
+                console.log('[CanvasEditor] Processing queued operation');
+                // Process the next operation using the same handler
+                // We can't call callbacks.onRemoteOperation directly, so we'll process it inline
+                setTimeout(() => {
+                  if (excalidrawAPI && !isApplyingRemoteOp.current) {
+                    isApplyingRemoteOp.current = true;
+                    try {
+                      const currentElements = excalidrawAPI.getSceneElements();
+                      const updatedElements = applyOperation(currentElements, nextOp);
+                      
+                      // Use proper update params for remote operations
+                      const updateParams: any = { elements: updatedElements };
+                      if (CaptureUpdateAction && CaptureUpdateAction.NEVER !== undefined) {
+                        updateParams.captureUpdate = CaptureUpdateAction.NEVER;
+                      } else {
+                        updateParams.commitToHistory = false;
+                      }
+                      
+                      excalidrawAPI.updateScene(updateParams);
+                      lastElements.current = updatedElements.map(el => ({ ...el }));
+                    } catch (error) {
+                      console.error('[CanvasEditor] Failed to apply queued operation:', error);
+                    } finally {
+                      isApplyingRemoteOp.current = false;
+                    }
+                  }
+                }, 10);
+              }
+            }
+          }, 50);
+          
         } catch (error) {
           console.error('[CanvasEditor] Failed to apply remote operation:', error);
-        } finally {
           isApplyingRemoteOp.current = false;
         }
       }
@@ -156,11 +263,17 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           try {
             const currentElements = excalidrawAPI.getSceneElements();
             const updatedElements = applyOperation(currentElements, operation);
-            excalidrawAPI.updateScene({
-              elements: updatedElements
-            });
-            lastElements.current = updatedElements;
-            console.log('[CanvasEditor] Applied pending operation:', operation.type);
+            
+            // Use the same simplified approach as in onRemoteOperation
+            const updateParams: any = { elements: updatedElements };
+            if (CaptureUpdateAction && CaptureUpdateAction.NEVER !== undefined) {
+              updateParams.captureUpdate = CaptureUpdateAction.NEVER;
+            } else {
+              updateParams.commitToHistory = false;
+            }
+            excalidrawAPI.updateScene(updateParams);
+            
+            lastElements.current = updatedElements.map(el => ({ ...el }));
           } catch (error) {
             console.error('[CanvasEditor] Failed to apply pending operation:', error);
           } finally {
@@ -298,7 +411,8 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
 
   // Initialize with existing canvas data if editing
   const initialData = canvas && canvas.elements ? {
-    elements: transformElementsFromFirebase(canvas.elements || []),
+    // Deep copy initial elements to ensure proper change detection
+    elements: transformElementsFromFirebase(canvas.elements || []).map(el => ({ ...el })),
     appState: {
       theme: theme,
       // Set theme-appropriate defaults
@@ -378,7 +492,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         
       saveData.files = files || {};
 
-      await onSave(canvas.id, saveData);
+      // Clean the data before saving to Firestore
+      const cleanedData = cleanCanvasUpdates(saveData);
+      await onSave(canvas.id, cleanedData);
       
       setHasChanges(false);
     } catch (error) {
@@ -433,7 +549,9 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             
           saveData.files = files || {};
 
-          await onSave(canvas.id, saveData);
+          // Clean the data before saving to Firestore
+          const cleanedData = cleanCanvasUpdates(saveData);
+          await onSave(canvas.id, cleanedData);
           
           setHasChanges(false);
         } catch (error) {
@@ -490,6 +608,36 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         }
         document.body.style.overflow = '';
       };
+    }
+  }, [isOpen]);
+
+  // Load Excalidraw utilities when component mounts
+  useEffect(() => {
+    const loadExcalidrawUtils = async () => {
+      try {
+        const excalidrawModule = await import('@excalidraw/excalidraw');
+        
+        // Store CaptureUpdateAction
+        if (excalidrawModule.CaptureUpdateAction) {
+          setCaptureUpdateAction(excalidrawModule.CaptureUpdateAction);
+        }
+        
+        // Store utility functions we might need
+        const utils = {
+          restoreElements: excalidrawModule.restoreElements,
+          getNonDeletedElements: excalidrawModule.getNonDeletedElements,
+          getSceneVersion: excalidrawModule.getSceneVersion,
+        };
+        
+        setExcalidrawUtils(utils);
+        console.log('[CanvasEditor] Loaded Excalidraw utilities');
+      } catch (error) {
+        console.error('[CanvasEditor] Failed to load Excalidraw utilities:', error);
+      }
+    };
+    
+    if (isOpen) {
+      loadExcalidrawUtils();
     }
   }, [isOpen]);
 
@@ -584,17 +732,6 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
     }
   }, [isOpen, mounted]);
 
-  // Add debug logging
-  useEffect(() => {
-    if (!librariesLoading && preBundledLibraries.length > 0) {
-      console.log(`🎨 Canvas Editor: Loaded ${preBundledLibraries.length} library items`);
-      console.log(`🎨 Canvas Editor: Sample library items:`, preBundledLibraries.slice(0, 2));
-      console.log(`🎨 Canvas Editor: Passing to Excalidraw initialData.libraryItems:`, preBundledLibraries);
-    }
-    if (librariesError) {
-      console.error('🚨 Canvas Editor: Library loading error:', librariesError);
-    }
-  }, [librariesLoading, preBundledLibraries.length, librariesError]);
 
   if (!isOpen || !canvas || !mounted) return null;
 
@@ -819,32 +956,36 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           libraryItems={preBundledLibraries}
           theme={theme}
           onChange={(elements, appState) => {
-            console.log('[CanvasEditor] onChange called:', {
-              elementCount: elements.length,
-              collaborationEnabled,
-              operationsInitialized,
-              isApplyingRemote: isApplyingRemoteOp.current,
-              sceneVersion: sceneVersion.current
-            });
             
             // Check if theme changed in Excalidraw and sync with our app
             if (appState.theme && appState.theme !== theme) {
-              console.log('Theme changed in Excalidraw:', appState.theme, 'current app theme:', theme);
-              toggleTheme();
+                toggleTheme();
             }
             
             // Don't process if we're applying remote operations
             if (isApplyingRemoteOp.current) {
-              console.log('[CanvasEditor] Skipping onChange - applying remote op');
+              // Still update lastElements to keep in sync - TRUE DEEP COPY
+              try {
+                lastElements.current = JSON.parse(JSON.stringify(elements));
+              } catch (e) {
+                lastElements.current = elements.map(el => ({ ...el }));
+              }
               return;
             }
             
             // Initialize lastElements on first change if not set
             if (!lastElements.current || lastElements.current.length === 0) {
-              console.log('[CanvasEditor] Initializing lastElements with', elements.length, 'elements');
-              lastElements.current = [...elements];
+              // TRUE DEEP COPY to preserve the initial state
+              try {
+                lastElements.current = JSON.parse(JSON.stringify(elements));
+              } catch (e) {
+                lastElements.current = elements.map(el => ({ ...el }));
+              }
               sceneVersion.current = 1;
-              return;
+              // Don't return here if collaboration is enabled - we might miss the first change!
+              if (!collaborationEnabled) {
+                return;
+              }
             }
             
             // Track scene version to detect real changes
@@ -852,33 +993,35 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
             
             // Detect and queue operations for collaboration
             if (collaborationEnabled && operationsInitialized) {
-              const changes = detectChanges(lastElements.current, elements);
+              const changes = detectChanges(lastElements.current || [], elements);
               
               if (changes.added.length > 0 || changes.updated.length > 0 || changes.deleted.length > 0) {
-                console.log('[CanvasEditor] Detected changes:', {
-                  added: changes.added.length,
-                  updated: changes.updated.length,
-                  deleted: changes.deleted.length,
-                  collaborationEnabled,
-                  operationsInitialized
-                });
-                
                 const operations = changesToOperations(changes);
                 
                 if (operations.length > 0) {
-                  console.log('[CanvasEditor] Queueing', operations.length, 'operations');
-                  operations.forEach(op => {
-                    queueOperation(op.type, op.elementIds, op.data);
+                  operations.forEach(async (op) => {
+                    await queueOperation(op.type, op.elementIds, op.data);
                   });
                 }
               }
               
-              lastElements.current = [...elements];
-            } else if (collaborationEnabled) {
-              console.log('[CanvasEditor] Skipping - not initialized:', {
+              // Update lastElements AFTER processing changes - TRUE DEEP COPY with JSON
+              try {
+                // Use JSON for true deep copy to ensure no shared references
+                lastElements.current = JSON.parse(JSON.stringify(elements));
+              } catch (e) {
+                // Fallback to shallow copy if JSON fails (circular references)
+                console.warn('[CanvasEditor] JSON deep copy failed, using shallow copy:', e);
+                lastElements.current = elements.map(el => ({ ...el }));
+              }
+            } else {
+              console.log('[CanvasEditor] ❌ Skipping change detection:', {
                 collaborationEnabled,
-                operationsInitialized
+                operationsInitialized,
+                reason: !collaborationEnabled ? 'Collaboration disabled' : 'Operations not initialized'
               });
+              // Still update lastElements for when collaboration gets enabled - DEEP COPY
+              lastElements.current = elements.map(el => ({ ...el }));
             }
             
             // Only mark as changed after initial setup (version > 1)
@@ -893,28 +1036,21 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
           }}
           excalidrawAPI={(api: any) => {
             setExcalidrawAPI(api);
-            // Don't initialize lastElements here - wait for first onChange
-            // to get the actual loaded elements
+            
+            
             // Try to load libraries using the API
             if (api && preBundledLibraries.length > 0) {
-              console.log('🔧 Attempting to load libraries via excalidrawAPI:', preBundledLibraries.length);
               try {
                 // Try different API methods to load libraries
                 if (api.updateLibrary) {
                   api.updateLibrary({ libraryItems: preBundledLibraries });
-                  console.log('✅ Used api.updateLibrary');
                 } else if (api.setLibraryItems) {
                   api.setLibraryItems(preBundledLibraries);
-                  console.log('✅ Used api.setLibraryItems');
                 } else if (api.addLibraryItems) {
                   api.addLibraryItems(preBundledLibraries);
-                  console.log('✅ Used api.addLibraryItems');
-                } else {
-                  console.log('❌ No library loading method found on excalidrawAPI');
-                  console.log('Available API methods:', Object.keys(api));
                 }
               } catch (error) {
-                console.error('❌ Error loading libraries via API:', error);
+                console.error('Error loading libraries:', error);
               }
             }
           }}
@@ -935,9 +1071,15 @@ export default function CanvasEditor({ canvas, isOpen, onSave, onClose }: Canvas
         />
       </div>
 
-      {/* RTDB Test Component - Show when collaboration is enabled */}
-      {collaborationEnabled && user?.uid && (
-        <RTDBTest canvasId={canvas?.id || ''} userId={user.uid} />
+      {/* Test components */}
+      {excalidrawAPI && canvas && (
+        <>
+          <MinimalSyncTest excalidrawAPI={excalidrawAPI} />
+          <ElementInspector excalidrawAPI={excalidrawAPI} />
+          {collaborationEnabled && (
+            <FirebaseDirectTest canvasId={canvas.id} excalidrawAPI={excalidrawAPI} />
+          )}
+        </>
       )}
 
       {/* Minimal close button */}

@@ -70,15 +70,21 @@ class OperationsService {
     userId: string,
     callbacks?: OperationCallbacks
   ) {
-    // console.log('[OperationsService] Initializing operations:', {
-    //   canvasId,
-    //   userId,
-    //   currentCanvasId: this.currentCanvasId
-    // });
+    console.log('[OperationsService] initializeOperations called:', {
+      canvasId,
+      userId,
+      currentCanvasId: this.currentCanvasId,
+      currentUserId: this.currentUserId,
+      hasRef: !!this.operationsRef,
+      willInitialize: this.currentCanvasId !== canvasId || this.currentUserId !== userId
+    });
     
-    if (this.currentCanvasId === canvasId) {
-      // console.log('[OperationsService] Already initialized for this canvas');
-      return; // Already initialized for this canvas
+    // Check if already properly initialized for this canvas and user
+    if (this.currentCanvasId === canvasId && 
+        this.currentUserId === userId && 
+        this.operationsRef) {
+      console.log('[OperationsService] Already initialized for this canvas and user');
+      return; // Already initialized
     }
 
     // Clean up previous operations if switching canvases
@@ -108,28 +114,48 @@ class OperationsService {
     const unsubscribe = onChildAdded(operationsQuery, (snapshot: DataSnapshot) => {
       const operation = snapshot.val() as CanvasOperation;
       
-      // console.log('[OperationsService] Received operation from RTDB:', {
-      //   type: operation?.type,
-      //   clientId: operation?.clientId,
-      //   isOurs: operation?.clientId === this.clientId,
-      //   timestamp: operation?.timestamp
-      // });
+      console.log('[OperationsService] 📡 Received operation from RTDB:', {
+        type: operation?.type,
+        clientId: operation?.clientId,
+        isOurs: operation?.clientId === this.clientId,
+        timestamp: operation?.timestamp,
+        elementCount: operation?.elementIds?.length,
+        hasCallback: !!this.callbacks.onRemoteOperation,
+        dataKeys: operation?.data ? Object.keys(operation.data) : [],
+        hasElements: !!(operation?.data?.elements),
+        firstElement: operation?.data?.elements?.[0] ? {
+          id: operation.data.elements[0].id,
+          type: operation.data.elements[0].type,
+          x: operation.data.elements[0].x,
+          y: operation.data.elements[0].y
+        } : null
+      });
       
-      if (!operation) return;
+      if (!operation) {
+        console.log('[OperationsService] ❌ Null operation received');
+        return;
+      }
 
       // Skip our own operations (we already applied them optimistically)
       if (operation.clientId === this.clientId) {
-        // console.log('[OperationsService] Skipping our own operation');
+        console.log('[OperationsService] ⏭ Skipping our own operation');
         return;
       }
 
       // Skip old operations
       if (operation.timestamp < this.lastSyncTimestamp) {
-        // console.log('[OperationsService] Skipping old operation');
+        console.log('[OperationsService] ⏰ Skipping old operation:', {
+          opTime: operation.timestamp,
+          lastSync: this.lastSyncTimestamp
+        });
         return;
       }
 
-      console.log('[OperationsService] Received remote operation:', operation.type);
+      console.log('[OperationsService] ✅ Processing remote operation:', {
+        type: operation.type,
+        elements: operation.elementIds?.length,
+        userId: operation.userId
+      });
       
       // Handle potential conflicts
       const conflictingLocal = this.findConflictingOperation(operation);
@@ -140,8 +166,13 @@ class OperationsService {
           this.callbacks.onRemoteOperation?.(resolved);
         }
       } else {
-        // console.log('[OperationsService] Calling onRemoteOperation callback');
-        this.callbacks.onRemoteOperation?.(operation);
+        console.log('[OperationsService] 📤 Calling onRemoteOperation callback');
+        if (this.callbacks.onRemoteOperation) {
+          this.callbacks.onRemoteOperation(operation);
+          console.log('[OperationsService] ✅ Callback executed');
+        } else {
+          console.error('[OperationsService] ❌ No onRemoteOperation callback!');
+        }
       }
 
       this.lastSyncTimestamp = Math.max(this.lastSyncTimestamp, operation.timestamp);
@@ -227,8 +258,31 @@ class OperationsService {
   }
 
   async queueOperation(operation: Omit<CanvasOperation, 'userId' | 'clientId' | 'timestamp'>) {
+    console.log('[OperationsService] queueOperation called:', {
+      hasUserId: !!this.currentUserId,
+      currentUserId: this.currentUserId,
+      hasCanvasId: !!this.currentCanvasId,
+      currentCanvasId: this.currentCanvasId,
+      hasRef: !!this.operationsRef,
+      operationType: operation.type
+    });
+    
     if (!this.currentUserId) {
-      console.error('[OperationsService] Cannot queue operation: no user ID');
+      console.error('[OperationsService] ❌ Cannot queue operation: no user ID (service not initialized)');
+      console.log('[OperationsService] Service state:', {
+        currentCanvasId: this.currentCanvasId,
+        currentUserId: this.currentUserId,
+        hasRef: !!this.operationsRef,
+        isOnline: this.isOnline
+      });
+      return;
+    }
+    
+    if (!this.currentCanvasId || !this.operationsRef) {
+      console.error('[OperationsService] ❌ Cannot queue operation: missing canvas or ref', {
+        canvasId: this.currentCanvasId,
+        hasRef: !!this.operationsRef
+      });
       return;
     }
 
@@ -239,11 +293,22 @@ class OperationsService {
       timestamp: Date.now()
     };
 
-    // console.log('[OperationsService] Queueing operation:', fullOperation);
+    console.log('[OperationsService] Adding to queue:', {
+      canvasId: this.currentCanvasId,
+      type: fullOperation.type,
+      queueLengthBefore: this.operationQueue.length
+    });
+    
     this.operationQueue.push(fullOperation);
+    
+    console.log('[OperationsService] Queue after adding:', {
+      queueLength: this.operationQueue.length,
+      isOnline: this.isOnline
+    });
 
     if (!this.isOnline) {
       this.offlineQueue.push(fullOperation);
+      console.log('[OperationsService] Added to offline queue (offline mode)');
       return;
     }
 
@@ -252,7 +317,9 @@ class OperationsService {
       clearTimeout(this.batchTimeout);
     }
 
+    console.log('[OperationsService] Scheduling flush in 50ms');
     this.batchTimeout = setTimeout(() => {
+      console.log('[OperationsService] Batch timeout triggered, flushing...');
       this.flushOperations();
     }, 50); // Batch operations within 50ms window
   }
@@ -261,29 +328,48 @@ class OperationsService {
     if (this.operationQueue.length === 0 || !this.operationsRef) {
       console.log('[OperationsService] Flush skipped:', {
         queueLength: this.operationQueue.length,
-        hasRef: !!this.operationsRef
+        hasRef: !!this.operationsRef,
+        currentCanvasId: this.currentCanvasId
       });
       return;
     }
 
-    console.log('[OperationsService] Sending to RTDB:', this.operationQueue.length, 'operations');
+    console.log('[OperationsService] Flushing operations:', {
+      count: this.operationQueue.length,
+      canvasId: this.currentCanvasId,
+      path: `canvas-operations/${this.currentCanvasId}`,
+      operations: this.operationQueue.map(op => ({
+        type: op.type,
+        elementCount: op.elementIds.length
+      }))
+    });
+    
     this.isSyncing = true;
     this.callbacks.onSyncStateChange?.(true);
 
     try {
       // Send all queued operations
       const promises = this.operationQueue.map(op => {
-        // console.log('[OperationsService] Pushing operation to RTDB:', op.type, op.elementIds.length, 'elements');
+        console.log('[OperationsService] Pushing to RTDB:', {
+          type: op.type,
+          elements: op.elementIds.length,
+          timestamp: op.timestamp,
+          userId: op.userId
+        });
         return push(this.operationsRef, op);
       });
 
       await Promise.all(promises);
       
-      console.log('[OperationsService] Sent successfully');
+      console.log('[OperationsService] ✅ Successfully sent', this.operationQueue.length, 'operations to RTDB');
       // Clear successfully sent operations
       this.operationQueue = [];
-    } catch (error) {
-      console.error('[OperationsService] Failed to sync operations:', error);
+    } catch (error: any) {
+      console.error('[OperationsService] ❌ Failed to sync operations:', {
+        error: error.message,
+        code: error.code,
+        canvasId: this.currentCanvasId
+      });
       // Keep operations in queue for retry
       if (!this.isOnline) {
         this.offlineQueue.push(...this.operationQueue);
@@ -329,6 +415,8 @@ class OperationsService {
   }
 
   async cleanup() {
+    console.log('[OperationsService] Cleanup called for canvas:', this.currentCanvasId);
+    
     // Flush any remaining operations
     await this.flushOperations();
 
@@ -354,6 +442,8 @@ class OperationsService {
     this.currentUserId = null;
     this.operationsRef = null;
     this.callbacks = {};
+    
+    console.log('[OperationsService] Cleanup completed');
   }
 }
 

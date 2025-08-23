@@ -214,7 +214,15 @@ export default function CanvasPage() {
           </div>
           <div className="flex items-center gap-2">
             {permissions.canShare && (
-              <ShareButton canvas={canvas} />
+              <ShareButton 
+                canvas={canvas} 
+                onUpdate={async (updates) => {
+                  // The updates will be saved to Firestore, and the snapshot listener
+                  // will automatically update the canvas state
+                  console.log('[Canvas Page] ShareButton onUpdate:', updates);
+                  // No need to manually update state here - snapshot listener handles it
+                }}
+              />
             )}
           </div>
         </div>

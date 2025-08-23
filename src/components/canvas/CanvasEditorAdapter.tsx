@@ -8,6 +8,7 @@ import CanvasEditor from './CanvasEditor';
 import CanvasErrorBoundary from './CanvasErrorBoundary';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { cleanCanvasUpdates } from '@/utils/firestore-clean';
 
 interface CanvasEditorAdapterProps {
   canvasId: string;
@@ -25,64 +26,58 @@ export default function CanvasEditorAdapter({
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(true);
 
-  // Load canvas data - only once for initial load when collaboration is enabled
+  // Load canvas data and listen for metadata updates
   useEffect(() => {
     if (!canvasId) return;
 
     const canvasRef = doc(db, 'canvases', canvasId);
     
-    // For collaborative canvases, we only need the initial load
-    // Real-time sync happens through RTDB operations
-    if (collaborationEnabled) {
-      // Just get the canvas once
-      const loadCanvas = async () => {
-        try {
-          const snapshot = await getDoc(canvasRef);
-          if (snapshot.exists()) {
-            const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
-            setCanvas(data);
-          } else {
-            toast.error('Canvas not found');
-          }
-        } catch (error) {
-          console.error('Error loading canvas:', error);
-          toast.error('Failed to load canvas');
-        } finally {
-          setLoading(false);
-        }
-      };
-      loadCanvas();
-    } else {
-      // For non-collaborative canvases, listen for updates
-      const unsubscribe = onSnapshot(canvasRef, (snapshot) => {
-        if (snapshot.exists()) {
-          const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
-          setCanvas(data);
-          setLoading(false);
-        } else {
-          toast.error('Canvas not found');
-          setLoading(false);
-        }
-      }, (error) => {
-        console.error('Error loading canvas:', error);
-        toast.error('Failed to load canvas');
+    // Always listen for canvas metadata updates (like collaboration being toggled)
+    // Even in collaborative mode, we need to know when collaboration settings change
+    const unsubscribe = onSnapshot(canvasRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = { id: snapshot.id, ...snapshot.data() } as Canvas;
+        console.log('[CanvasEditorAdapter] Canvas data updated:', {
+          id: data.id,
+          collaborationEnabled: data.collaborationEnabled,
+          propCollabEnabled: collaborationEnabled
+        });
+        setCanvas(data);
         setLoading(false);
-      });
+      } else {
+        toast.error('Canvas not found');
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Error loading canvas:', error);
+      toast.error('Failed to load canvas');
+      setLoading(false);
+    });
 
-      return () => unsubscribe();
-    }
-  }, [canvasId, collaborationEnabled]);
+    return () => unsubscribe();
+  }, [canvasId]); // Remove collaborationEnabled from deps to avoid re-subscribing
 
   const handleSave = async (id: string, updates: Partial<Canvas>) => {
     if (readOnly || !user) return;
 
     try {
       const canvasRef = doc(db, 'canvases', id);
-      await updateDoc(canvasRef, {
+      
+      // Clean the updates to remove undefined values
+      const cleanedUpdates = cleanCanvasUpdates({
         ...updates,
         lastModified: new Date(),
         lastModifiedBy: user.uid
       });
+      
+      console.log('[CanvasEditorAdapter] Saving to Firestore:', {
+        hasElements: !!cleanedUpdates.elements,
+        elementCount: cleanedUpdates.elements?.length,
+        hasAppState: !!cleanedUpdates.appState,
+        keys: Object.keys(cleanedUpdates)
+      });
+      
+      await updateDoc(canvasRef, cleanedUpdates);
     } catch (error) {
       console.error('Error saving canvas:', error);
       toast.error('Failed to save canvas');
@@ -111,17 +106,18 @@ export default function CanvasEditorAdapter({
     );
   }
 
-  // Pass collaboration flag through canvas object
+  // Use the collaboration flag from the prop (which comes from the parent's canvas state)
+  // This ensures we're using the most up-to-date collaboration status
   const canvasWithCollaboration = {
     ...canvas,
-    collaborationEnabled: collaborationEnabled
+    collaborationEnabled: collaborationEnabled || canvas.collaborationEnabled || false
   };
   
-  console.log('[CanvasEditorAdapter] Canvas collaboration status:', {
+  console.log('[CanvasEditorAdapter] 🔄 Canvas collaboration status:', {
     canvasId: canvas.id,
-    collaborationEnabled: collaborationEnabled,
-    canvasHasCollab: canvas.collaborationEnabled,
-    passedCollab: canvasWithCollaboration.collaborationEnabled
+    propCollabEnabled: collaborationEnabled,
+    canvasCollabEnabled: canvas.collaborationEnabled,
+    finalCollabEnabled: canvasWithCollaboration.collaborationEnabled
   });
 
   // CanvasEditor expects isOpen to be true to render

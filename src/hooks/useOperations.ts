@@ -15,25 +15,35 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
   const [queueSize, setQueueSize] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const initRef = useRef(false);
+  const previousCanvasId = useRef<string | null>(null);
 
   useEffect(() => {
-    console.log('[useOperations] Hook check:', {
+    console.log('[useOperations] 🔍 Hook effect triggered:', {
       hasUser: !!user,
       userId: user?.uid,
       canvasId: canvasId,
-      enabled: enabled
+      enabled: enabled,
+      wasInitialized: isInitialized
     });
     
     if (!user || !canvasId || !enabled) {
-      console.log('[useOperations] Skipping init - missing requirements:', {
+      console.log('[useOperations] ⛔ Skipping init - missing requirements:', {
         user: !!user,
         canvasId: !!canvasId,
-        enabled
+        enabled,
+        reason: !user ? 'No user' : !canvasId ? 'No canvas ID' : 'Not enabled'
       });
+      
+      // Only cleanup if we were previously initialized
+      if (isInitialized) {
+        console.log('[useOperations] Was initialized, cleaning up...');
+        operationsService.cleanup().catch(console.error);
+        setIsInitialized(false);
+      }
       return;
     }
 
-    console.log('[useOperations] Initializing operations for canvas:', canvasId, 'user:', user.uid);
+    console.log('[useOperations] ✅ Starting initialization for canvas:', canvasId, 'user:', user.uid);
 
     const initOperations = async () => {
       try {
@@ -59,32 +69,60 @@ export function useOperations({ canvasId, enabled = true, callbacks }: UseOperat
 
     initOperations();
 
+    // Store current canvas ID for cleanup detection
+    previousCanvasId.current = canvasId;
+    
     return () => {
-      console.log('[useOperations] Cleaning up operations for canvas:', canvasId);
-      operationsService.cleanup().catch(console.error);
-      setIsInitialized(false);
-      setIsSyncing(false);
+      // Only cleanup when canvas actually changes or component unmounts
+      if (previousCanvasId.current && previousCanvasId.current !== canvasId) {
+        console.log('[useOperations] Canvas changed, cleaning up old canvas:', previousCanvasId.current);
+        operationsService.cleanup().catch(console.error);
+        setIsInitialized(false);
+        setIsSyncing(false);
+      }
     };
-  }, [user, canvasId, enabled]); // Remove callbacks from dependencies
+  }, [user?.uid, canvasId, enabled]); // Use user.uid instead of user object
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log('[useOperations] Component unmounting, cleaning up...');
+      operationsService.cleanup().catch(console.error);
+    };
+  }, []); // Empty deps - only run on unmount
 
   const queueOperation = useCallback(async (
     type: CanvasOperation['type'],
     elementIds: string[],
     data: any
   ) => {
+    console.log('[useOperations] queueOperation called:', {
+      isInitialized,
+      type,
+      elementIds: elementIds.length,
+      hasData: !!data
+    });
+    
     if (!isInitialized) {
       console.warn('[useOperations] Cannot queue operation - not initialized');
       return;
     }
 
-    console.log('[useOperations] Queueing operation:', { type, elementIds: elementIds.length });
+    console.log('[useOperations] Passing to service:', { 
+      type, 
+      elementIds: elementIds.length,
+      dataKeys: Object.keys(data || {})
+    });
+    
     await operationsService.queueOperation({
       type,
       elementIds,
       data
     });
 
-    setQueueSize(operationsService.getQueueSize());
+    const newSize = operationsService.getQueueSize();
+    console.log('[useOperations] Queue size after operation:', newSize);
+    setQueueSize(newSize);
   }, [isInitialized]);
 
   const forceSync = useCallback(async () => {
