@@ -3,14 +3,16 @@
 import { useState } from 'react';
 import { useNotes } from '@/hooks/useNotes';
 import { useCanvases } from '@/hooks/useCanvases';
-import { Project, Note, NoteImage, Canvas } from '@/types';
-import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock, PenTool } from 'lucide-react';
+import { Project, Note, NoteImage, Canvas, Task } from '@/types';
+import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock, PenTool, ListTodo, LayoutGrid, List } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NoteCard from '@/components/notes/NoteCard';
 import NoteModal from '@/components/notes/NoteModal';
 import CanvasCard from '@/components/canvas/CanvasCard';
 import CanvasEditor from '@/components/canvas/CanvasEditor';
 import CanvasNameModal from '@/components/canvas/CanvasNameModal';
+import TasksListView from '@/components/tasks/TasksListView';
+import TasksKanbanView from '@/components/tasks/TasksKanbanView';
 import { groupNotesByCalendarWeek } from '@/utils/date';
 
 interface NotesViewProps {
@@ -28,12 +30,15 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [contentType, setContentType] = useState<'notes' | 'canvases'>('notes');
+  const [contentType, setContentType] = useState<'notes' | 'canvases' | 'tasks'>('notes');
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
   const [editingCanvas, setEditingCanvas] = useState<Canvas | null>(null);
   const [showCanvasNameModal, setShowCanvasNameModal] = useState(false);
   const [canvasModalMode, setCanvasModalMode] = useState<'create' | 'rename'>('create');
   const [renamingCanvas, setRenamingCanvas] = useState<Canvas | null>(null);
+  const [tasksView, setTasksView] = useState<'list' | 'kanban'>('list');
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const filteredNotes = notes.filter(note =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -350,7 +355,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
                 {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                 <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
               </button>
-              
+
               {isSelectionMode && selectedNotes.size > 0 && (
                 <>
                   <button
@@ -360,7 +365,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
                     <FileText className="w-4 h-4" />
                     <span>Generate PDF ({selectedNotes.size})</span>
                   </button>
-                  
+
                   <button
                     onClick={handleGenerateHoursPDF}
                     className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
@@ -372,9 +377,37 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               )}
             </>
           )}
-          
+
+          {/* View toggle for tasks */}
+          {contentType === 'tasks' && (
+            <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+              <button
+                onClick={() => setTasksView('list')}
+                className={`px-3 py-1.5 rounded-md flex items-center space-x-1 transition-colors ${
+                  tasksView === 'list'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                <span className="text-sm font-medium">List</span>
+              </button>
+              <button
+                onClick={() => setTasksView('kanban')}
+                className={`px-3 py-1.5 rounded-md flex items-center space-x-1 transition-colors ${
+                  tasksView === 'kanban'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span className="text-sm font-medium">Kanban</span>
+              </button>
+            </div>
+          )}
+
           {/* Create buttons based on content type */}
-          {contentType === 'notes' ? (
+          {contentType === 'notes' && (
             <button
               onClick={handleCreateNote}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
@@ -382,13 +415,26 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               <Plus className="w-4 h-4" />
               <span>New Note</span>
             </button>
-          ) : (
+          )}
+          {contentType === 'canvases' && (
             <button
               onClick={handleCreateCanvas}
               className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>New Canvas</span>
+            </button>
+          )}
+          {contentType === 'tasks' && (
+            <button
+              onClick={() => {
+                setEditingTask(null);
+                setShowTaskModal(true);
+              }}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Task</span>
             </button>
           )}
         </div>
@@ -429,6 +475,17 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setContentType('tasks')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              contentType === 'tasks'
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            <ListTodo className="w-4 h-4" />
+            <span>Tasks</span>
+          </button>
         </div>
 
         {/* Search (only for notes) */}
@@ -462,8 +519,8 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
           <div className="text-center py-12">
             <StickyNote className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
             <div className="text-gray-500 dark:text-gray-400 mb-4">
-              {searchTerm 
-                ? 'No notes found matching your search.' 
+              {searchTerm
+                ? 'No notes found matching your search.'
                 : 'No notes in this project yet. Create your first note!'
               }
             </div>
@@ -502,7 +559,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
             ))}
           </div>
         )
-        ) : (
+        ) : contentType === 'canvases' ? (
           // Canvases Display
           canvasesLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -538,6 +595,27 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
                 />
               ))}
             </div>
+          )
+        ) : (
+          // Tasks Display
+          tasksView === 'list' ? (
+            <TasksListView
+              projectId={project.id}
+              isModalOpen={showTaskModal}
+              onOpenModal={() => setShowTaskModal(true)}
+              onCloseModal={() => setShowTaskModal(false)}
+              editingTask={editingTask}
+              onSetEditingTask={setEditingTask}
+            />
+          ) : (
+            <TasksKanbanView
+              projectId={project.id}
+              isModalOpen={showTaskModal}
+              onOpenModal={() => setShowTaskModal(true)}
+              onCloseModal={() => setShowTaskModal(false)}
+              editingTask={editingTask}
+              onSetEditingTask={setEditingTask}
+            />
           )
         )}
       </div>

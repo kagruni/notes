@@ -94,6 +94,38 @@ service cloud.firestore {
       allow delete: if isOwner(resource);
     }
     
+    // Tasks collection
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.sharedWith
+      );
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['projectId', 'title', 'status', 'priority', 'order', 'createdAt', 'updatedAt', 'userId']);
+
+      allow update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId;
+
+      allow delete: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // Task counters collection - used for atomic order assignment
+    match /taskCounters/{projectId} {
+      allow read: if isSignedIn() && (
+        get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.sharedWith
+      );
+
+      allow write: if isSignedIn() && (
+        get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.sharedWith
+      );
+    }
+
     // Canvas invites collection
     match /canvas_invites/{inviteId} {
       // Anyone can read their own invites
@@ -101,16 +133,16 @@ service cloud.firestore {
         resource.data.invitedEmail == request.auth.token.email ||
         resource.data.invitedBy.userId == request.auth.uid
       );
-      
+
       // Create invite - must have admin access to canvas
       allow create: if isSignedIn() && canAdminCanvas(request.resource.data.canvasId) &&
         request.resource.data.invitedBy.userId == request.auth.uid;
-      
+
       // Update invite status - only invited user can accept/decline
-      allow update: if isSignedIn() && 
+      allow update: if isSignedIn() &&
         resource.data.invitedEmail == request.auth.token.email &&
         request.resource.data.diff(resource.data).hasOnly(['status', 'acceptedAt']);
-      
+
       // Delete invite - only creator or invited user
       allow delete: if isSignedIn() && (
         resource.data.invitedBy.userId == request.auth.uid ||

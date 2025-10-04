@@ -156,4 +156,21 @@ export interface CollaborationState {
   isConnected: boolean;
   activeUsers: Collaborator[];
   version: number;
+}
+
+// Task Management Types
+export type TaskStatus = 'todo' | 'in_progress' | 'done';
+export type TaskPriority = 'low' | 'medium' | 'high';
+
+export interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
 } 
