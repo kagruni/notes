@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Task, TaskStatus } from '@/types';
 import TaskCard from './TaskCard';
 import TaskModal from './TaskModal';
@@ -76,13 +76,13 @@ export default function TasksListView({
   const handleModalSave = async (data: Partial<Task>) => {
     if (editingTask) {
       // Update existing task
-      updateTaskMutation.mutate({
+      await updateTaskMutation.mutateAsync({
         taskId: editingTask.id,
         updates: data,
       });
     } else {
       // Create new task
-      createTaskMutation.mutate({
+      await createTaskMutation.mutateAsync({
         projectId,
         title: data.title || '',
         description: data.description,

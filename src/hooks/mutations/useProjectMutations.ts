@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   collection,
   addDoc,
@@ -9,16 +9,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
 import { Project } from '@/types';
 import toast from 'react-hot-toast';
-import {
-  optimisticallyAddProject,
-  optimisticallyUpdateProject,
-  optimisticallyDeleteProject,
-  rollbackQueryData,
-} from '@/lib/queryOptimizations';
 
 interface CreateProjectInput {
   title: string;
@@ -36,6 +29,7 @@ interface UpdateProjectInput {
  */
 export function useCreateProject() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ title, description, color }: CreateProjectInput) => {
@@ -61,15 +55,32 @@ export function useCreateProject() {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.projects.list(user.uid) });
 
+      // Snapshot previous data
+      const previousProjects = queryClient.getQueryData<Project[]>(queryKeys.projects.list(user.uid));
+
       // Optimistically add project to cache
-      const previousProjects = optimisticallyAddProject(user.uid, { title, description, color });
+      if (previousProjects) {
+        const optimisticProject: Project = {
+          id: `temp-${Date.now()}`,
+          title,
+          description,
+          userId: user.uid,
+          color: color || '#3B82F6',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        queryClient.setQueryData<Project[]>(
+          queryKeys.projects.list(user.uid),
+          [...previousProjects, optimisticProject]
+        );
+      }
 
       return { previousProjects };
     },
     onError: (error: Error, _variables, context) => {
       // Rollback on error
       if (context?.previousProjects && user) {
-        rollbackQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
+        queryClient.setQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
       }
       console.error('Error creating project:', error);
       toast.error(`Failed to create project: ${error.message}`);
@@ -91,6 +102,7 @@ export function useCreateProject() {
  */
 export function useUpdateProject() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ projectId, updates }: UpdateProjectInput) => {
@@ -115,15 +127,27 @@ export function useUpdateProject() {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.projects.list(user.uid) });
 
+      // Snapshot previous data
+      const previousProjects = queryClient.getQueryData<Project[]>(queryKeys.projects.list(user.uid));
+
       // Optimistically update project in cache
-      const previousProjects = optimisticallyUpdateProject(user.uid, projectId, updates);
+      if (previousProjects) {
+        queryClient.setQueryData<Project[]>(
+          queryKeys.projects.list(user.uid),
+          previousProjects.map(p =>
+            p.id === projectId
+              ? { ...p, ...updates, updatedAt: new Date() }
+              : p
+          )
+        );
+      }
 
       return { previousProjects };
     },
     onError: (error: Error, _variables, context) => {
       // Rollback on error
       if (context?.previousProjects && user) {
-        rollbackQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
+        queryClient.setQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
       }
       console.error('Error updating project:', error);
       toast.error('Failed to update project');
@@ -145,6 +169,7 @@ export function useUpdateProject() {
  */
 export function useDeleteProject() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (projectId: string) => {
@@ -157,15 +182,23 @@ export function useDeleteProject() {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.projects.list(user.uid) });
 
+      // Snapshot previous data
+      const previousProjects = queryClient.getQueryData<Project[]>(queryKeys.projects.list(user.uid));
+
       // Optimistically delete project from cache
-      const previousProjects = optimisticallyDeleteProject(user.uid, projectId);
+      if (previousProjects) {
+        queryClient.setQueryData<Project[]>(
+          queryKeys.projects.list(user.uid),
+          previousProjects.filter(p => p.id !== projectId)
+        );
+      }
 
       return { previousProjects };
     },
     onError: (error: Error, _variables, context) => {
       // Rollback on error
       if (context?.previousProjects && user) {
-        rollbackQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
+        queryClient.setQueryData(queryKeys.projects.list(user.uid), context.previousProjects);
       }
       console.error('Error deleting project:', error);
       toast.error('Failed to delete project');

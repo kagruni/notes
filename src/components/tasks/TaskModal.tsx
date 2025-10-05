@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority } from '@/types';
 import { X } from 'lucide-react';
 
@@ -45,7 +45,7 @@ export default function TaskModal({ isOpen, onClose, onSave, task }: TaskModalPr
     setError('');
   }, [task, isOpen]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -88,7 +88,7 @@ export default function TaskModal({ isOpen, onClose, onSave, task }: TaskModalPr
     } finally {
       setLoading(false);
     }
-  }, [title, description, priority, status, loading, onSave, onClose]);
+  };
 
   // Prevent background scroll on mobile when modal is open
   useEffect(() => {
