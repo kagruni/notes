@@ -2,12 +2,12 @@
 
 import { useState, Fragment } from 'react';
 import { Dialog, Transition, Tab } from '@headlessui/react';
-import { 
-  X, 
-  Copy, 
-  Link2, 
-  Globe, 
-  Lock, 
+import {
+  X,
+  Copy,
+  Link2,
+  Globe,
+  Lock,
   Check,
   Mail,
   UserPlus,
@@ -16,7 +16,14 @@ import {
 } from 'lucide-react';
 import { Canvas, PermissionLevel } from '@/types';
 import CollaboratorsList from './CollaboratorsList';
-import { useCollaboration } from '@/hooks/useCollaboration';
+import { useCollaborationQuery } from '@/hooks/queries/useCollaborationQuery';
+import {
+  useShareCanvas,
+  useUpdatePermission,
+  useRemoveCollaborator,
+  useGenerateShareLink,
+  useRevokeShareLink
+} from '@/hooks/mutations/useCollaborationMutations';
 
 interface ShareModalProps {
   canvas: Canvas;
@@ -45,19 +52,26 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
     fullCanvas: canvas
   });
 
+  // Query for collaboration data
   const {
-    collaborators,
-    pendingInvites,
-    canShare,
-    shareLink,
-    isPublic,
-    inviteUser,
-    updateUserPermission,
-    removeUser,
-    generateLink,
-    revokeLink,
+    data: collaborationData,
+    isLoading: isLoadingCollaboration,
     error: collaborationError
-  } = useCollaboration(canvas.id);
+  } = useCollaborationQuery(canvas.id);
+
+  // Mutation hooks
+  const shareCanvasMutation = useShareCanvas();
+  const updatePermissionMutation = useUpdatePermission();
+  const removeCollaboratorMutation = useRemoveCollaborator();
+  const generateShareLinkMutation = useGenerateShareLink();
+  const revokeShareLinkMutation = useRevokeShareLink();
+
+  // Extract data from query
+  const collaborators = collaborationData?.collaborators || [];
+  const pendingInvites = collaborationData?.pendingInvites || [];
+  const canShare = collaborationData?.canShare || false;
+  const shareLink = collaborationData?.shareLink;
+  const isPublic = collaborationData?.isPublic || false;
 
   const handleInviteByEmail = async () => {
     if (!emailInput || !emailInput.includes('@')) {
@@ -72,9 +86,13 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
 
     setIsInviting(true);
     setInviteError(null);
-    
+
     try {
-      await inviteUser(emailInput, selectedPermission);
+      await shareCanvasMutation.mutateAsync({
+        canvasId: canvas.id,
+        email: emailInput,
+        permission: selectedPermission
+      });
       setEmailInput('');
       setSelectedPermission(PermissionLevel.VIEWER);
     } catch (error) {
@@ -92,9 +110,13 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
     }
 
     setLinkError(null);
-    
+
     try {
-      await generateLink(linkPermission, 0); // No expiration by default
+      await generateShareLinkMutation.mutateAsync({
+        canvasId: canvas.id,
+        permission: linkPermission,
+        expiresInDays: 0 // No expiration by default
+      });
     } catch (error) {
       console.error('Failed to generate share link:', error);
       setLinkError(error instanceof Error ? error.message : 'Failed to generate link');
@@ -116,12 +138,18 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
     }
 
     setLinkError(null);
-    
+
     try {
       if (isPublic) {
-        await revokeLink();
+        await revokeShareLinkMutation.mutateAsync({
+          canvasId: canvas.id
+        });
       } else {
-        await generateLink(linkPermission, 0);
+        await generateShareLinkMutation.mutateAsync({
+          canvasId: canvas.id,
+          permission: linkPermission,
+          expiresInDays: 0
+        });
       }
     } catch (error) {
       console.error('Failed to update public access:', error);
@@ -131,7 +159,10 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
 
   const handleRemoveCollaborator = async (userId: string) => {
     try {
-      await removeUser(userId);
+      await removeCollaboratorMutation.mutateAsync({
+        canvasId: canvas.id,
+        userId
+      });
     } catch (error) {
       console.error('Failed to remove collaborator:', error);
     }
@@ -139,7 +170,11 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
 
   const handleUpdatePermission = async (userId: string, newRole: PermissionLevel) => {
     try {
-      await updateUserPermission(userId, newRole);
+      await updatePermissionMutation.mutateAsync({
+        canvasId: canvas.id,
+        userId,
+        permission: newRole
+      });
     } catch (error) {
       console.error('Failed to update permission:', error);
     }
@@ -188,6 +223,13 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
                     <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900 dark:text-white mb-4">
                       Share &quot;{canvas.title}&quot;
                     </Dialog.Title>
+
+                    {isLoadingCollaboration && (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <span className="ml-3 text-gray-600 dark:text-gray-400">Loading collaboration data...</span>
+                      </div>
+                    )}
 
                     <Tab.Group>
                       <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 dark:bg-gray-700 p-1">
@@ -260,11 +302,11 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
                             </select>
                             <button
                               onClick={handleInviteByEmail}
-                              disabled={isInviting || !emailInput || !canShare}
+                              disabled={isInviting || shareCanvasMutation.isPending || !emailInput || !canShare}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                               <Mail className="w-4 h-4" />
-                              {isInviting ? 'Sending...' : 'Invite'}
+                              {isInviting || shareCanvasMutation.isPending ? 'Sending...' : 'Invite'}
                             </button>
                           </div>
 
@@ -361,10 +403,10 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
                               </p>
                               <button
                                 onClick={handleGenerateLink}
-                                disabled={!canShare}
+                                disabled={!canShare || generateShareLinkMutation.isPending}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                               >
-                                Generate Link
+                                {generateShareLinkMutation.isPending ? 'Generating...' : 'Generate Link'}
                               </button>
                             </div>
                           )}
@@ -426,10 +468,10 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
                               </div>
                               <button
                                 onClick={handleTogglePublic}
-                                disabled={!canShare}
+                                disabled={!canShare || generateShareLinkMutation.isPending || revokeShareLinkMutation.isPending}
                                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                                   isPublic ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
-                                } ${!canShare ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                } ${!canShare || generateShareLinkMutation.isPending || revokeShareLinkMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
                               >
                                 <span className="sr-only">Toggle public access</span>
                                 <span
@@ -447,11 +489,11 @@ export default function ShareModal({ canvas, isOpen, onClose, onUpdate }: ShareM
                                 </p>
                               </div>
                             )}
-                            
+
                             {collaborationError && (
                               <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                                 <p className="text-sm text-red-600 dark:text-red-400">
-                                  <strong>Error:</strong> {collaborationError}
+                                  <strong>Error:</strong> {collaborationError instanceof Error ? collaborationError.message : 'Failed to load collaboration data'}
                                 </p>
                               </div>
                             )}

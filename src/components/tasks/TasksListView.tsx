@@ -6,7 +6,9 @@ import TaskCard from './TaskCard';
 import TaskModal from './TaskModal';
 import { Plus, CheckSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useTasks } from '@/hooks/useTasks';
+import { useTasksQuery } from '@/hooks/queries/useTasksQuery';
+import { useRealtimeTasks } from '@/hooks/useRealtimeSync';
+import { useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/mutations/useTaskMutations';
 
 interface TasksListViewProps {
   projectId: string;
@@ -25,7 +27,12 @@ export default function TasksListView({
   editingTask,
   onSetEditingTask
 }: TasksListViewProps) {
-  const { tasks, loading, createTask, updateTask, deleteTask } = useTasks(projectId);
+  // React Query hooks for tasks
+  const { data: tasks = [], isLoading: loading } = useTasksQuery(projectId);
+  useRealtimeTasks(projectId); // Real-time sync
+  const createTaskMutation = useCreateTask();
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
 
   // Status configuration with colors
   const statusConfig = {
@@ -69,20 +76,23 @@ export default function TasksListView({
   const handleModalSave = async (data: Partial<Task>) => {
     if (editingTask) {
       // Update existing task
-      await updateTask(editingTask.id, data);
+      updateTaskMutation.mutate({
+        taskId: editingTask.id,
+        updates: data,
+      });
     } else {
       // Create new task
-      await createTask(
+      createTaskMutation.mutate({
         projectId,
-        data.title || '',
-        data.description,
-        data.priority
-      );
+        title: data.title || '',
+        description: data.description,
+        priority: data.priority,
+      });
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    await deleteTask(taskId);
+    deleteTaskMutation.mutate(taskId);
   };
 
   if (loading) {

@@ -1,89 +1,73 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, or } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { Canvas } from '@/types';
 import { Plus, Users, Clock, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useOwnedCanvasesQuery, useSharedCanvasesQuery } from '@/hooks/queries/useCanvasesQuery';
+import { useRealtimeOwnedCanvases, useRealtimeSharedCanvases } from '@/hooks/useRealtimeSync';
+import { useCreateCanvas } from '@/hooks/mutations/useCanvasMutations';
 
 export default function CanvasListPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const [canvases, setCanvases] = useState<Canvas[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'owned' | 'shared'>('all');
 
+  // Redirect if not authenticated
   useEffect(() => {
     if (!user) {
       router.push('/');
-      return;
     }
+  }, [user, router]);
 
-    // Subscribe to canvases where user is owner or collaborator
-    const canvasesRef = collection(db, 'canvases');
-    
-    let q;
+  // Set up real-time sync
+  useRealtimeOwnedCanvases();
+  useRealtimeSharedCanvases();
+
+  // Fetch canvases using React Query
+  const { data: ownedCanvases = [], isLoading: isLoadingOwned } = useOwnedCanvasesQuery();
+  const { data: sharedCanvases = [], isLoading: isLoadingShared } = useSharedCanvasesQuery();
+
+  // Create canvas mutation
+  const createCanvasMutation = useCreateCanvas();
+
+  // Combine canvases based on filter
+  const canvases = useMemo(() => {
     if (filter === 'owned') {
-      q = query(
-        canvasesRef,
-        where('userId', '==', user.uid),
-        orderBy('lastModified', 'desc')
-      );
+      return ownedCanvases;
     } else if (filter === 'shared') {
-      q = query(
-        canvasesRef,
-        where(`collaborators.${user.uid}`, '!=', null),
-        orderBy('lastModified', 'desc')
-      );
+      return sharedCanvases;
     } else {
-      // For 'all', we need to fetch both owned and shared
-      // Firebase doesn't support OR queries well, so we'll handle this differently
-      q = query(canvasesRef, orderBy('lastModified', 'desc'));
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const canvasData: Canvas[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        // Filter client-side for 'all' filter
-        if (filter === 'all') {
-          if (data.userId === user.uid || data.collaborators?.[user.uid]) {
-            canvasData.push({ id: doc.id, ...data } as Canvas);
-          }
-        } else {
-          canvasData.push({ id: doc.id, ...data } as Canvas);
+      // Combine both, avoiding duplicates by ID
+      const combined = [...ownedCanvases];
+      const ownedIds = new Set(ownedCanvases.map(c => c.id));
+      sharedCanvases.forEach(canvas => {
+        if (!ownedIds.has(canvas.id)) {
+          combined.push(canvas);
         }
       });
-      setCanvases(canvasData);
-      setLoading(false);
-    });
+      return combined.sort((a, b) => {
+        const aTime = a.lastModified?.toDate?.() || new Date(0);
+        const bTime = b.lastModified?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+    }
+  }, [filter, ownedCanvases, sharedCanvases]);
 
-    return () => unsubscribe();
-  }, [user, filter, router]);
+  const loading = isLoadingOwned || isLoadingShared;
 
   const createNewCanvas = async () => {
     if (!user) return;
 
     try {
-      const newCanvas = {
-        name: `Canvas ${new Date().toLocaleDateString()}`,
-        userId: user.uid,
-        content: null,
-        collaborators: {},
-        activeUsers: {},
-        chatMessages: [],
-        version: 1,
-        createdAt: serverTimestamp(),
-        lastModified: serverTimestamp()
-      };
-
-      const docRef = await addDoc(collection(db, 'canvases'), newCanvas);
+      const canvasId = await createCanvasMutation.mutateAsync({
+        name: `Canvas ${new Date().toLocaleDateString()}`
+      });
       toast.success('Canvas created!');
-      router.push(`/canvas/${docRef.id}`);
+      router.push(`/canvas/${canvasId}`);
     } catch (error) {
       console.error('Error creating canvas:', error);
       toast.error('Failed to create canvas');

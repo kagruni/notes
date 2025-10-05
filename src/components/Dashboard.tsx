@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useProjects } from '@/hooks/useProjects';
+import { useProjectsQuery } from '@/hooks/queries/useProjectsQuery';
+import { useRealtimeProjects } from '@/hooks/useRealtimeSync';
+import { useCreateProject, useUpdateProject, useDeleteProject } from '@/hooks/mutations/useProjectMutations';
 import { Project } from '@/types';
 import ProjectCard from './projects/ProjectCard';
 import ProjectModal from './projects/ProjectModal';
@@ -9,19 +11,32 @@ import NotesView from './notes/NotesView';
 import { Plus } from 'lucide-react';
 
 export default function Dashboard() {
-  const { projects, loading, error, createProject, updateProject, deleteProject } = useProjects();
+  // Enable real-time sync
+  useRealtimeProjects();
+
+  // Queries
+  const { data: projects = [], isLoading: loading, error } = useProjectsQuery();
+
+  // Mutations
+  const createProjectMutation = useCreateProject();
+  const updateProjectMutation = useUpdateProject();
+  const deleteProjectMutation = useDeleteProject();
+
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<'projects' | 'canvases'>('projects');
 
   const handleCreateProject = async (title: string, description?: string, color?: string) => {
-    await createProject(title, description, color);
+    createProjectMutation.mutate({ title, description, color });
   };
 
   const handleUpdateProject = async (title: string, description?: string, color?: string) => {
     if (editingProject) {
-      await updateProject(editingProject.id, { title, description, color });
+      updateProjectMutation.mutate({
+        projectId: editingProject.id,
+        updates: { title, description, color }
+      });
     }
   };
 
@@ -32,7 +47,7 @@ export default function Dashboard() {
 
   const handleDeleteProject = async (projectId: string) => {
     if (confirm('Are you sure you want to delete this project? All notes in this project will also be deleted.')) {
-      await deleteProject(projectId);
+      deleteProjectMutation.mutate(projectId);
     }
   };
 

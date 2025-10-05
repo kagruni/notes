@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Project } from '@/types';
 import { MoreHorizontal, Edit2, Trash2, Folder } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { prefetchProjectNotes, prefetchProjectTasks } from '@/lib/queryOptimizations';
 
 interface ProjectCardProps {
   project: Project;
@@ -12,6 +14,7 @@ interface ProjectCardProps {
 }
 
 export default function ProjectCard({ project, onEdit, onDelete, onSelect }: ProjectCardProps) {
+  const { user } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
 
   const formatDate = (date: Date) => {
@@ -22,10 +25,19 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelect }: Pro
     }).format(date);
   };
 
+  // Prefetch project notes and tasks on hover
+  const handleMouseEnter = () => {
+    if (user) {
+      prefetchProjectNotes(project.id, user.uid);
+      prefetchProjectTasks(project.id, user.uid);
+    }
+  };
+
   return (
-    <div 
+    <div
       className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md dark:hover:shadow-gray-900/20 transition-all cursor-pointer"
       onClick={() => onSelect(project)}
+      onMouseEnter={handleMouseEnter}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start space-x-3 flex-1">

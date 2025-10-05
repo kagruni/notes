@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { Task, TaskStatus } from '@/types';
-import { useTasks } from '@/hooks/useTasks';
+import { useTasksQuery } from '@/hooks/queries/useTasksQuery';
+import { useRealtimeTasks } from '@/hooks/useRealtimeSync';
+import { useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/mutations/useTaskMutations';
 import TaskCard from './TaskCard';
 import TaskModal from './TaskModal';
 
@@ -46,7 +48,11 @@ export default function TasksKanbanView({
   editingTask,
   onSetEditingTask
 }: TasksKanbanViewProps) {
-  const { tasks, loading, updateTask, deleteTask } = useTasks(projectId);
+  // React Query hooks for tasks
+  const { data: tasks = [], isLoading: loading } = useTasksQuery(projectId);
+  useRealtimeTasks(projectId); // Real-time sync
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
   const [isDragDisabled, setIsDragDisabled] = useState(
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
@@ -103,13 +109,11 @@ export default function TasksKanbanView({
 
     // Only update if status changed
     if (task.status !== newStatus) {
-      try {
-        // Optimistic update would happen via Firestore real-time listener
-        await updateTask(taskId, { status: newStatus });
-      } catch (error) {
-        console.error('Failed to update task status:', error);
-        // Error handling is done in useTasks hook (toast notification)
-      }
+      // Optimistic update would happen via Firestore real-time listener
+      updateTaskMutation.mutate({
+        taskId,
+        updates: { status: newStatus },
+      });
     }
   };
 
@@ -119,11 +123,7 @@ export default function TasksKanbanView({
   };
 
   const handleDelete = async (taskId: string) => {
-    try {
-      await deleteTask(taskId);
-    } catch (error) {
-      console.error('Failed to delete task:', error);
-    }
+    deleteTaskMutation.mutate(taskId);
   };
 
   const handleCloseModal = () => {

@@ -1,8 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useNotes } from '@/hooks/useNotes';
-import { useCanvases } from '@/hooks/useCanvases';
+import { useNotesQuery } from '@/hooks/queries/useNotesQuery';
+import { useRealtimeNotes, useRealtimeCanvases } from '@/hooks/useRealtimeSync';
+import { useCreateNote, useUpdateNote, useDeleteNote } from '@/hooks/mutations/useNoteMutations';
+import { useCanvasesQuery } from '@/hooks/queries/useCanvasesQuery';
+import { useCreateCanvas, useUpdateCanvas, useDeleteCanvas } from '@/hooks/mutations/useCanvasMutations';
 import { Project, Note, NoteImage, Canvas, Task } from '@/types';
 import { ArrowLeft, Plus, Search, StickyNote, FileText, CheckSquare, Square, Clock, PenTool, ListTodo, LayoutGrid, List } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -21,8 +24,19 @@ interface NotesViewProps {
 }
 
 export default function NotesView({ project, onBack }: NotesViewProps) {
-  const { notes, loading: notesLoading, error: notesError, createNote, updateNote, deleteNote } = useNotes(project.id);
-  const { canvases, loading: canvasesLoading, error: canvasesError, createCanvas, updateCanvas, deleteCanvas } = useCanvases(project.id);
+  // React Query hooks for notes
+  const { data: notes = [], isLoading: notesLoading, error: notesError } = useNotesQuery(project.id);
+  useRealtimeNotes(project.id); // Real-time sync
+  const createNoteMutation = useCreateNote();
+  const updateNoteMutation = useUpdateNote();
+  const deleteNoteMutation = useDeleteNote();
+
+  // React Query hooks for canvases
+  const { data: canvases = [], isLoading: canvasesLoading, error: canvasesError } = useCanvasesQuery(project.id);
+  useRealtimeCanvases(project.id); // Real-time sync
+  const createCanvasMutation = useCreateCanvas();
+  const updateCanvasMutation = useUpdateCanvas();
+  const deleteCanvasMutation = useDeleteCanvas();
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
@@ -48,12 +62,21 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
   const groupedNotes = groupNotesByCalendarWeek(filteredNotes);
 
   const handleSubmitNote = async (title: string, content: string, tags: string[], images?: NoteImage[]) => {
-    await createNote(title, content, project.id, tags, images);
+    createNoteMutation.mutate({
+      title,
+      content,
+      projectId: project.id,
+      tags,
+      images,
+    });
   };
 
   const handleUpdateNote = async (title: string, content: string, tags: string[], images?: NoteImage[]) => {
     if (editingNote) {
-      await updateNote(editingNote.id, { title, content, tags, images });
+      updateNoteMutation.mutate({
+        noteId: editingNote.id,
+        updates: { title, content, tags, images },
+      });
     }
   };
 
@@ -79,7 +102,8 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
 
   const handleDeleteNote = async (noteId: string) => {
     if (confirm('Are you sure you want to delete this note?')) {
-      await deleteNote(noteId);
+      const note = notes.find(n => n.id === noteId);
+      deleteNoteMutation.mutate({ noteId, note });
     }
   };
 
@@ -103,10 +127,14 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
 
   const handleConfirmCreateCanvas = async (title: string) => {
     try {
-      const canvasId = await createCanvas(title, project.id);
+      const canvasId = await createCanvasMutation.mutateAsync({
+        name: title,
+        projectId: project.id
+      });
       const newCanvas: Canvas = {
         id: canvasId,
-        title: title,
+        name: title,
+        title: title, // For backward compatibility
         elements: [],
         appState: {},
         files: {},
@@ -130,7 +158,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
 
   const handleUpdateCanvas = async (canvasId: string, updates: Partial<Canvas>) => {
     try {
-      await updateCanvas(canvasId, updates);
+      await updateCanvasMutation.mutateAsync({ canvasId, updates });
       toast.success('Canvas saved');
     } catch (error) {
       console.error('Failed to update canvas:', error);
@@ -140,7 +168,7 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
 
   const handleDeleteCanvas = async (canvasId: string) => {
     try {
-      await deleteCanvas(canvasId);
+      await deleteCanvasMutation.mutateAsync(canvasId);
       toast.success('Canvas deleted');
     } catch (error) {
       console.error('Failed to delete canvas:', error);
@@ -156,9 +184,12 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
 
   const handleConfirmRenameCanvas = async (newTitle: string) => {
     if (!renamingCanvas) return;
-    
+
     try {
-      await updateCanvas(renamingCanvas.id, { title: newTitle });
+      await updateCanvasMutation.mutateAsync({
+        canvasId: renamingCanvas.id,
+        updates: { name: newTitle, title: newTitle } // Update both for compatibility
+      });
       toast.success('Canvas renamed');
     } catch (error) {
       console.error('Failed to rename canvas:', error);
@@ -513,7 +544,9 @@ export default function NotesView({ project, onBack }: NotesViewProps) {
             </div>
           ) : notesError ? (
             <div className="flex items-center justify-center py-12">
-              <div className="text-red-500 dark:text-red-400">{notesError}</div>
+              <div className="text-red-500 dark:text-red-400">
+                {notesError instanceof Error ? notesError.message : 'Failed to load notes'}
+              </div>
             </div>
           ) : filteredNotes.length === 0 ? (
           <div className="text-center py-12">

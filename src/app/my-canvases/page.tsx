@@ -1,56 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { shareCanvas } from '@/services/collaboration';
 import { PermissionLevel } from '@/types';
+import { useOwnedCanvasesQuery } from '@/hooks/queries/useCanvasesQuery';
+import { useRealtimeOwnedCanvases } from '@/hooks/useRealtimeSync';
 
 export default function MyCanvasesPage() {
-  const [canvases, setCanvases] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
-  useEffect(() => {
-    const fetchMyCanvases = async () => {
-      // Wait for auth to finish loading
-      if (authLoading) {
-        return;
-      }
-      
-      if (!user) {
-        setError('Please sign in to view your canvases');
-        setLoading(false);
-        return;
-      }
+  // Set up real-time sync
+  useRealtimeOwnedCanvases();
 
-      try {
-        // Query only canvases owned by the current user
-        const q = query(
-          collection(db, 'canvases'),
-          where('userId', '==', user.uid)
-        );
-        
-        const canvasesSnap = await getDocs(q);
-        const canvasesList = canvasesSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        setCanvases(canvasesList);
-      } catch (err) {
-        console.error('Error fetching canvases:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch canvases');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Fetch canvases using React Query
+  const { data: canvases = [], isLoading, error } = useOwnedCanvasesQuery();
 
-    fetchMyCanvases();
-  }, [user, authLoading]);
+  const loading = authLoading || isLoading;
 
   const handleShare = async (canvasId: string) => {
     const email = prompt('Enter email address to share with:');
@@ -68,7 +35,8 @@ export default function MyCanvasesPage() {
   };
 
   if (authLoading || loading) return <div className="p-4">Loading...</div>;
-  if (error) return <div className="p-4 text-red-500">Error: {error}</div>;
+  if (error) return <div className="p-4 text-red-500">Error: {error instanceof Error ? error.message : 'Failed to load canvases'}</div>;
+  if (!user) return <div className="p-4 text-red-500">Error: Please sign in to view your canvases</div>;
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
